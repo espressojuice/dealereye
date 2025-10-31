@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# AI Models
+*.pt
+*.pth
+*.onnx
+*.engine
+*.trt
+*.plan
+weights/
+models/
+
+# Data & Outputs
+snapshots/
+clips/
+logs/
+*.log
+*.mp4
+*.avi
+*.mov
+*.jpg
+*.jpeg
+*.png
+
+# AWS Credentials
+.aws/
+credentials
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+*.bak
+
+# Docker
+.dockerignore
+
+# Testing
+test_snapshot.jpg
+test_output/
+
+# Cache
+.cache/
+*.cache

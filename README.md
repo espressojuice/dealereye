@@ -135,6 +135,96 @@ GET /list
 GET /download/{filename}
 ```
 
+## TensorRT Optimization (Jetson GPU Acceleration)
+
+### Why TensorRT?
+
+TensorRT provides **3-5x faster inference** on Jetson hardware compared to PyTorch:
+- YOLOv8n PyTorch: ~40-60ms per frame
+- YOLOv8n TensorRT: ~10-15ms per frame
+- Enables real-time processing of multiple cameras
+
+### Optimize Your Model
+
+**On the Jetson device**, run the optimization script:
+
+```bash
+# SSH into your Jetson
+ssh jetson@<JETSON_IP>
+
+# Navigate to installation
+cd /opt/dealereye
+
+# Optimize the model (takes 5-10 minutes)
+python3 optimize_model.py --model yolov8n.pt --half --benchmark
+
+# This creates yolov8n.engine in the same directory
+```
+
+**Options:**
+```bash
+python3 optimize_model.py \
+  --model yolov8n.pt \      # Model to optimize
+  --imgsz 640 \              # Input size (640 recommended)
+  --half \                   # Use FP16 precision (faster, recommended)
+  --workspace 4 \            # GPU memory in GB
+  --benchmark \              # Test performance after export
+  --compare                  # Compare PyTorch vs TensorRT speed
+```
+
+**Model variants:**
+- `yolov8n.pt` - Nano (fastest, recommended for Jetson Nano/Xavier)
+- `yolov8s.pt` - Small (good balance)
+- `yolov8m.pt` - Medium (best accuracy, requires Orin)
+
+### Using TensorRT Engine
+
+The system **automatically detects** and uses `.engine` files:
+
+1. After running `optimize_model.py`, restart the container:
+   ```bash
+   sudo docker restart dealereye
+   ```
+
+2. Check the logs to confirm TensorRT is active:
+   ```bash
+   sudo docker logs dealereye
+   # Should show: "🚀 TensorRT engine found: yolov8n.engine"
+   ```
+
+3. Monitor performance:
+   ```bash
+   curl http://localhost:8080/performance
+   ```
+
+**Performance API response:**
+```json
+{
+  "model_type": "TensorRT",
+  "avg_inference_ms": 12.5,
+  "fps": 80.0,
+  "min_inference_ms": 10.2,
+  "max_inference_ms": 15.8
+}
+```
+
+### Troubleshooting TensorRT
+
+**"Failed to build engine":**
+- Reduce workspace: `--workspace 2`
+- Use FP32: remove `--half` flag
+- Check available GPU memory: `tegrastats`
+
+**Engine file not detected:**
+- Ensure `.engine` file is in same directory as `.pt` file
+- Check file permissions: `ls -l *.engine`
+- Restart container after creating engine
+
+**Slower than expected:**
+- Verify GPU is being used: `tegrastats` (GPU usage should be >0%)
+- Check power mode: `sudo nvpmodel -q` (should be MAXN)
+- Ensure FP16 was used during export
+
 ## Configuration
 
 ### Wasabi Credentials
@@ -233,10 +323,17 @@ dealereye/
 
 ## Performance Tips
 
-1. **Model Selection**: Use `yolov8n.pt` for best speed on Jetson Nano/Xavier
-2. **Resolution**: Reduce camera resolution if needed (720p recommended)
-3. **Detection Interval**: Increase if CPU maxed out (e.g., every 10 frames)
-4. **Multiple Cameras**: Test 2-3 cameras first, then scale based on performance
+1. **Use TensorRT**: Run `optimize_model.py` for 3-5x faster inference (see TensorRT section)
+2. **Model Selection**: Use `yolov8n.pt` for best speed, `yolov8s.pt` for better accuracy
+3. **Resolution**: Reduce camera resolution if needed (720p recommended)
+4. **Detection Interval**: Increase if CPU maxed out (e.g., every 10 frames)
+5. **Power Mode**: Set Jetson to max performance: `sudo nvpmodel -m 0`
+6. **Multiple Cameras**: With TensorRT, Orin can handle 4-8 cameras simultaneously
+
+**Expected Performance (Jetson Orin NX with TensorRT):**
+- YOLOv8n: ~80 FPS (12ms per frame)
+- YOLOv8s: ~50 FPS (20ms per frame)
+- 4 cameras @ 720p: ~20-25 FPS per camera
 
 ## Troubleshooting
 

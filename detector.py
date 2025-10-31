@@ -1,6 +1,7 @@
 """
 AI Detection Module for Dealereye
 Uses YOLOv8 for real-time object detection of people and vehicles
+Supports both PyTorch (.pt) and TensorRT (.engine) models
 """
 
 from ultralytics import YOLO
@@ -8,19 +9,40 @@ import cv2
 import numpy as np
 from datetime import datetime
 import os
+import time
 
 class Detector:
-    def __init__(self, model_path="yolov8n.pt", conf_threshold=0.5):
+    def __init__(self, model_path="yolov8n.pt", conf_threshold=0.5, auto_tensorrt=True):
         """
         Initialize the detector with YOLOv8 model
 
         Args:
             model_path: Path to YOLOv8 model weights (default: yolov8n.pt for nano)
             conf_threshold: Confidence threshold for detections (0-1)
+            auto_tensorrt: Automatically use TensorRT engine if available (default: True)
         """
+        # Auto-detect TensorRT engine
+        if auto_tensorrt and model_path.endswith('.pt'):
+            engine_path = model_path.replace('.pt', '.engine')
+            if os.path.exists(engine_path):
+                print(f"🚀 TensorRT engine found: {engine_path}")
+                model_path = engine_path
+            else:
+                print(f"💡 Using PyTorch model: {model_path}")
+                print(f"   To optimize for Jetson, run: python3 optimize_model.py --model {model_path}")
+
         print(f"Loading YOLOv8 model: {model_path}")
+        self.model_path = model_path
         self.model = YOLO(model_path)
         self.conf_threshold = conf_threshold
+
+        # Detect model type
+        self.is_tensorrt = model_path.endswith('.engine')
+        self.model_type = "TensorRT" if self.is_tensorrt else "PyTorch"
+
+        # Performance tracking
+        self.inference_times = []
+        self.total_detections = 0
 
         # Classes of interest for dealerships
         # COCO dataset: 0=person, 2=car, 3=motorcycle, 5=bus, 7=truck
@@ -33,6 +55,8 @@ class Detector:
             7: "truck"
         }
 
+        print(f"✅ Detector initialized ({self.model_type} backend)")
+
     def detect(self, frame):
         """
         Run detection on a single frame
@@ -44,10 +68,21 @@ class Detector:
             dict with detections: {
                 'detections': [{'class': str, 'confidence': float, 'bbox': [x1,y1,x2,y2]}],
                 'count': int,
-                'timestamp': str
+                'timestamp': str,
+                'inference_time_ms': float
             }
         """
+        # Track inference time
+        start_time = time.time()
+
         results = self.model(frame, conf=self.conf_threshold, verbose=False)
+
+        inference_time = (time.time() - start_time) * 1000  # Convert to ms
+        self.inference_times.append(inference_time)
+
+        # Keep only last 100 times for rolling average
+        if len(self.inference_times) > 100:
+            self.inference_times.pop(0)
 
         detections = []
         for result in results:
@@ -66,10 +101,43 @@ class Detector:
                         'bbox': [round(coord, 2) for coord in bbox]
                     })
 
+        self.total_detections += len(detections)
+
         return {
             'detections': detections,
             'count': len(detections),
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now().isoformat(),
+            'inference_time_ms': round(inference_time, 2)
+        }
+
+    def get_performance_stats(self):
+        """
+        Get performance statistics
+
+        Returns:
+            dict with performance metrics
+        """
+        if not self.inference_times:
+            return {
+                'model_type': self.model_type,
+                'model_path': self.model_path,
+                'avg_inference_ms': 0,
+                'fps': 0,
+                'total_detections': 0
+            }
+
+        avg_time = sum(self.inference_times) / len(self.inference_times)
+        fps = 1000 / avg_time if avg_time > 0 else 0
+
+        return {
+            'model_type': self.model_type,
+            'model_path': self.model_path,
+            'avg_inference_ms': round(avg_time, 2),
+            'min_inference_ms': round(min(self.inference_times), 2),
+            'max_inference_ms': round(max(self.inference_times), 2),
+            'fps': round(fps, 1),
+            'total_inferences': len(self.inference_times),
+            'total_detections': self.total_detections
         }
 
     def draw_detections(self, frame, detections):

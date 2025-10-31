@@ -22,12 +22,19 @@ print("System ready!")
 @app.route("/")
 def home():
     stats = camera_manager.get_all_stats()
+    perf_stats = detector.get_performance_stats()
     return jsonify({
         "status": "✅ Dealereye AI system running",
         "bucket": BUCKET,
         "cameras": len(stats),
-        "camera_stats": stats
+        "camera_stats": stats,
+        "ai_performance": perf_stats
     })
+
+@app.route("/performance", methods=["GET"])
+def performance():
+    """Get AI model performance statistics"""
+    return jsonify(detector.get_performance_stats())
 
 # === Camera Management Endpoints ===
 
