@@ -11,7 +11,15 @@ WORKDIR /app
 COPY . /app
 
 # Install Python packages
-RUN pip3 install --no-cache-dir boto3 flask requests pillow
+RUN pip3 install --no-cache-dir \
+    boto3 \
+    flask \
+    requests \
+    pillow \
+    ultralytics \
+    opencv-python \
+    numpy \
+    torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 # Expose Flask port
 EXPOSE 8080
