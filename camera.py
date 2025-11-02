@@ -41,6 +41,11 @@ class CameraStream:
         self.clip_writer = None
         self.clip_filename = None
 
+        # FPS tracking
+        self.fps_start_time = time.time()
+        self.fps_frame_count = 0
+        self.current_fps = 0
+
         self.stats = {
             'frames_processed': 0,
             'detections': 0,
@@ -118,6 +123,14 @@ class CameraStream:
 
                 self.latest_frame = frame
                 self.stats['frames_processed'] += 1
+
+                # Calculate FPS
+                self.fps_frame_count += 1
+                elapsed = time.time() - self.fps_start_time
+                if elapsed >= 1.0:  # Update FPS every second
+                    self.current_fps = self.fps_frame_count / elapsed
+                    self.fps_frame_count = 0
+                    self.fps_start_time = time.time()
 
                 # Add frame to rolling buffer
                 self.frame_buffer.append(frame.copy())
@@ -221,10 +234,23 @@ class CameraStream:
 
     def get_stats(self):
         """Get camera statistics"""
+        # Get detector performance if available
+        avg_inference_ms = 0
+        if self.detector and hasattr(self.detector, 'get_performance_stats'):
+            perf = self.detector.get_performance_stats()
+            avg_inference_ms = perf.get('avg_inference_ms', 0)
+
         return {
             'camera_id': self.camera_id,
             'stream_url': self.stream_url,
-            **self.stats,
+            'running': self.running,  # Boolean for UI
+            'status': self.stats['status'],  # String status
+            'fps': self.current_fps,
+            'frames_processed': self.stats['frames_processed'],
+            'total_detections': self.stats['detections'],
+            'errors': self.stats['errors'],
+            'clips_recorded': self.stats['clips_recorded'],
+            'avg_inference_ms': avg_inference_ms,
             'last_detection': self.last_detection_time.isoformat() if self.last_detection_time else None
         }
 
