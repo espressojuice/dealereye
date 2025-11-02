@@ -45,14 +45,15 @@ class Detector:
         self.total_detections = 0
 
         # Classes of interest for dealerships
-        # COCO dataset: 0=person, 2=car, 3=motorcycle, 5=bus, 7=truck
-        self.target_classes = [0, 2, 3, 5, 7]
+        # COCO dataset: 0=person, 2=car, 3=motorcycle, 5=bus, 7=truck, 63=laptop
+        self.target_classes = [0, 2, 3, 5, 7, 63]
         self.class_names = {
             0: "person",
             2: "car",
             3: "motorcycle",
             5: "bus",
-            7: "truck"
+            7: "truck",
+            63: "laptop"
         }
 
         print(f"✅ Detector initialized ({self.model_type} backend)")
@@ -157,8 +158,13 @@ class Detector:
             x1, y1, x2, y2 = [int(coord) for coord in det['bbox']]
             label = f"{det['class']} {det['confidence']:.2f}"
 
-            # Different colors for people vs vehicles
-            color = (0, 255, 0) if det['class'] == 'person' else (255, 0, 0)
+            # Different colors for different object types
+            if det['class'] == 'person':
+                color = (0, 255, 0)  # Green for people
+            elif det['class'] == 'laptop':
+                color = (0, 165, 255)  # Orange for laptops
+            else:
+                color = (255, 0, 0)  # Blue for vehicles
 
             cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
             cv2.putText(annotated, label, (x1, y1 - 10),
