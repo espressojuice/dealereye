@@ -239,6 +239,51 @@ def dashboard():
                 </div>
             </div>
 
+            <!-- AI Detection Settings -->
+            <div class="add-camera-section">
+                <h2>🎯 AI Detection Thresholds</h2>
+                <div id="threshold-message"></div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                    <div class="form-group">
+                        <label for="thresh_person">👤 Person: <span id="val_person">50</span>%</label>
+                        <input type="range" id="thresh_person" min="10" max="90" value="50" step="5"
+                               oninput="document.getElementById('val_person').textContent = this.value"
+                               style="width: 100%;">
+                    </div>
+                    <div class="form-group">
+                        <label for="thresh_laptop">💻 Laptop: <span id="val_laptop">20</span>%</label>
+                        <input type="range" id="thresh_laptop" min="10" max="90" value="20" step="5"
+                               oninput="document.getElementById('val_laptop').textContent = this.value"
+                               style="width: 100%;">
+                    </div>
+                    <div class="form-group">
+                        <label for="thresh_car">🚗 Car: <span id="val_car">25</span>%</label>
+                        <input type="range" id="thresh_car" min="10" max="90" value="25" step="5"
+                               oninput="document.getElementById('val_car').textContent = this.value"
+                               style="width: 100%;">
+                    </div>
+                    <div class="form-group">
+                        <label for="thresh_motorcycle">🏍️ Motorcycle: <span id="val_motorcycle">25</span>%</label>
+                        <input type="range" id="thresh_motorcycle" min="10" max="90" value="25" step="5"
+                               oninput="document.getElementById('val_motorcycle').textContent = this.value"
+                               style="width: 100%;">
+                    </div>
+                    <div class="form-group">
+                        <label for="thresh_bus">🚌 Bus: <span id="val_bus">25</span>%</label>
+                        <input type="range" id="thresh_bus" min="10" max="90" value="25" step="5"
+                               oninput="document.getElementById('val_bus').textContent = this.value"
+                               style="width: 100%;">
+                    </div>
+                    <div class="form-group">
+                        <label for="thresh_truck">🚚 Truck: <span id="val_truck">25</span>%</label>
+                        <input type="range" id="thresh_truck" min="10" max="90" value="25" step="5"
+                               oninput="document.getElementById('val_truck').textContent = this.value"
+                               style="width: 100%;">
+                    </div>
+                </div>
+                <button type="button" class="btn" onclick="updateThresholds()">Apply Thresholds</button>
+            </div>
+
             <!-- Add Camera Section -->
             <div class="add-camera-section">
                 <h2>➕ Add Camera</h2>
@@ -508,9 +553,82 @@ def dashboard():
                 }
             }
 
+            // Load and update detection thresholds
+            async function loadThresholds() {
+                try {
+                    const response = await fetch('/thresholds');
+                    const thresholds = await response.json();
+
+                    // Update sliders with current values
+                    if (thresholds.person) {
+                        document.getElementById('thresh_person').value = thresholds.person;
+                        document.getElementById('val_person').textContent = thresholds.person;
+                    }
+                    if (thresholds.laptop) {
+                        document.getElementById('thresh_laptop').value = thresholds.laptop;
+                        document.getElementById('val_laptop').textContent = thresholds.laptop;
+                    }
+                    if (thresholds.car) {
+                        document.getElementById('thresh_car').value = thresholds.car;
+                        document.getElementById('val_car').textContent = thresholds.car;
+                    }
+                    if (thresholds.motorcycle) {
+                        document.getElementById('thresh_motorcycle').value = thresholds.motorcycle;
+                        document.getElementById('val_motorcycle').textContent = thresholds.motorcycle;
+                    }
+                    if (thresholds.bus) {
+                        document.getElementById('thresh_bus').value = thresholds.bus;
+                        document.getElementById('val_bus').textContent = thresholds.bus;
+                    }
+                    if (thresholds.truck) {
+                        document.getElementById('thresh_truck').value = thresholds.truck;
+                        document.getElementById('val_truck').textContent = thresholds.truck;
+                    }
+                } catch (err) {
+                    console.error('Error loading thresholds:', err);
+                }
+            }
+
+            async function updateThresholds() {
+                const messageDiv = document.getElementById('threshold-message');
+
+                try {
+                    const thresholds = {
+                        person: parseInt(document.getElementById('thresh_person').value),
+                        laptop: parseInt(document.getElementById('thresh_laptop').value),
+                        car: parseInt(document.getElementById('thresh_car').value),
+                        motorcycle: parseInt(document.getElementById('thresh_motorcycle').value),
+                        bus: parseInt(document.getElementById('thresh_bus').value),
+                        truck: parseInt(document.getElementById('thresh_truck').value)
+                    };
+
+                    const response = await fetch('/thresholds', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(thresholds)
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        messageDiv.innerHTML = '<div class="message message-success">✅ Thresholds updated! Changes are active now.</div>';
+                        setTimeout(() => {
+                            messageDiv.innerHTML = '';
+                        }, 3000);
+                    } else {
+                        messageDiv.innerHTML = `<div class="message message-error">❌ Error: ${data.error}</div>`;
+                    }
+                } catch (err) {
+                    messageDiv.innerHTML = `<div class="message message-error">❌ Error: ${err.message}</div>`;
+                }
+            }
+
             // Initialize on page load
             window.addEventListener('DOMContentLoaded', function() {
                 console.log('Dashboard loaded');
+
+                // Load current thresholds
+                loadThresholds();
 
                 // Check for updates on page load
                 if (typeof checkForUpdates === 'function') {
@@ -732,6 +850,63 @@ def list_files():
 def download(filename):
     obj = s3.get_object(Bucket=BUCKET, Key=filename)
     return send_file(io.BytesIO(obj["Body"].read()), download_name=filename, as_attachment=True)
+
+# === AI Detection Threshold Endpoints ===
+
+@app.route("/thresholds", methods=["GET"])
+def get_thresholds():
+    """Get current detection thresholds"""
+    class_mapping = {
+        0: "person",
+        2: "car",
+        3: "motorcycle",
+        5: "bus",
+        7: "truck",
+        63: "laptop"
+    }
+
+    thresholds = {}
+    for cls_id, cls_name in class_mapping.items():
+        threshold = detector.class_thresholds.get(cls_id, detector.conf_threshold)
+        thresholds[cls_name] = int(threshold * 100)
+
+    return jsonify(thresholds)
+
+@app.route("/thresholds", methods=["POST"])
+def update_thresholds():
+    """Update detection thresholds"""
+    try:
+        data = request.get_json()
+
+        # Map class names to IDs
+        name_to_id = {
+            "person": 0,
+            "car": 2,
+            "motorcycle": 3,
+            "bus": 5,
+            "truck": 7,
+            "laptop": 63
+        }
+
+        # Update thresholds
+        for cls_name, threshold_pct in data.items():
+            if cls_name in name_to_id:
+                cls_id = name_to_id[cls_name]
+                detector.class_thresholds[cls_id] = threshold_pct / 100.0
+
+        # Print new thresholds
+        print("\n🎯 Detection thresholds updated:")
+        for cls_id, cls_name in detector.class_names.items():
+            threshold = detector.class_thresholds.get(cls_id, detector.conf_threshold)
+            print(f"   - {cls_name}: {int(threshold * 100)}%")
+
+        return jsonify({
+            "message": "Thresholds updated successfully",
+            "thresholds": data
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # === Update System Endpoints ===
 
