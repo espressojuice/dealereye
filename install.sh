@@ -53,20 +53,57 @@ echo "Starting container..."
 # Create config directory for persistent camera settings
 sudo mkdir -p "${INSTALL_DIR}/config"
 
+# Mount TensorRT engine if it exists (for persistence across rebuilds)
+TENSORRT_MOUNT=""
+if [ -f "${INSTALL_DIR}/yolov8n.engine" ]; then
+  TENSORRT_MOUNT="-v ${INSTALL_DIR}/yolov8n.engine:/app/yolov8n.engine"
+  echo "Found existing TensorRT engine, mounting it..."
+fi
+
 sudo docker run -d \
   --restart unless-stopped \
   -p ${PORT}:8080 \
   --name "$CONTAINER_NAME" \
   -v ~/.aws:/root/.aws \
   -v "${INSTALL_DIR}/config:/app/config" \
+  ${TENSORRT_MOUNT} \
   "$APP_NAME"
 
-# 5️⃣ Show status and local URL
+# 5️⃣ TensorRT Optimization (if not already done)
+if [ ! -f "${INSTALL_DIR}/yolov8n.engine" ]; then
+  echo ""
+  echo "🚀 Optimizing YOLOv8 model with TensorRT (this may take 5-10 minutes)..."
+  echo "This is a one-time optimization that will speed up AI inference by 3-5x"
+
+  # Wait for container to be ready
+  sleep 5
+
+  # Run optimization inside container
+  sudo docker exec "$CONTAINER_NAME" python3 /app/optimize_model.py \
+    --model yolov8n.pt \
+    --half \
+    --benchmark 2>&1 | grep -E "Building|Saved|Performance|FPS" || true
+
+  # Copy the optimized engine to host for persistence
+  sudo docker cp "${CONTAINER_NAME}:/app/yolov8n.engine" "${INSTALL_DIR}/yolov8n.engine" 2>/dev/null || true
+
+  # Restart container to pick up TensorRT engine
+  echo "Restarting container with TensorRT engine..."
+  sudo docker restart "$CONTAINER_NAME"
+  sleep 3
+
+  echo "✅ TensorRT optimization complete!"
+else
+  echo ""
+  echo "✅ TensorRT engine already exists, skipping optimization"
+fi
+
+# 6️⃣ Show status and local URL
 echo ""
 echo "== Deployment complete =="
 sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
 LAN_IP=$(hostname -I | awk '{print $1}')
 echo ""
-echo "Access the app at: http://${LAN_IP}:${PORT}/"
+echo "Access the dashboard at: http://${LAN_IP}:${PORT}/dashboard"
 echo "============================================"
