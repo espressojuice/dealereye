@@ -3,6 +3,8 @@ import boto3
 import os
 import io
 import cv2
+import subprocess
+import requests
 from detector import Detector
 from camera import CameraManager
 
@@ -217,6 +219,17 @@ def dashboard():
         <div class="container">
             <h1>🎥 Dealereye AI Dashboard</h1>
 
+            <!-- Update Section -->
+            <div class="add-camera-section" id="update-section">
+                <h2>🔄 System Updates</h2>
+                <div id="update-message"></div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button class="btn" onclick="checkForUpdates()">Check for Updates</button>
+                    <button class="btn btn-warning" id="update-btn" onclick="applyUpdate()" style="display: none;">Update Now</button>
+                    <span id="version-info" style="color: #888; font-size: 14px;"></span>
+                </div>
+            </div>
+
             <!-- Add Camera Section -->
             <div class="add-camera-section">
                 <h2>➕ Add Camera</h2>
@@ -383,6 +396,74 @@ def dashboard():
                 updateStats();
                 setInterval(updateStats, 2000);
             }
+
+            // Update system functions
+            async function checkForUpdates() {
+                const messageDiv = document.getElementById('update-message');
+                const versionInfo = document.getElementById('version-info');
+                const updateBtn = document.getElementById('update-btn');
+
+                messageDiv.innerHTML = '<div class="message" style="background: #666;">Checking for updates...</div>';
+
+                try {
+                    const response = await fetch('/update/check');
+                    const data = await response.json();
+
+                    if (data.update_available) {
+                        messageDiv.innerHTML = '<div class="message message-success">✨ Update available!</div>';
+                        versionInfo.textContent = `Current: ${data.local_version} → Latest: ${data.latest_version}`;
+                        updateBtn.style.display = 'inline-block';
+                    } else {
+                        messageDiv.innerHTML = '<div class="message" style="background: #4CAF50;">✅ You\'re up to date!</div>';
+                        versionInfo.textContent = `Version: ${data.local_version}`;
+                        updateBtn.style.display = 'none';
+                    }
+
+                    setTimeout(() => {
+                        messageDiv.innerHTML = '';
+                    }, 5000);
+                } catch (err) {
+                    messageDiv.innerHTML = '<div class="message message-error">Error checking for updates</div>';
+                    setTimeout(() => {
+                        messageDiv.innerHTML = '';
+                    }, 5000);
+                }
+            }
+
+            async function applyUpdate() {
+                if (!confirm('This will update the system and restart the container. Continue?')) {
+                    return;
+                }
+
+                const messageDiv = document.getElementById('update-message');
+                const updateBtn = document.getElementById('update-btn');
+
+                messageDiv.innerHTML = '<div class="message" style="background: #ff9800;">⏳ Updating system...</div>';
+                updateBtn.disabled = true;
+
+                try {
+                    const response = await fetch('/update/apply', {method: 'POST'});
+                    const data = await response.json();
+
+                    if (data.status === 'manual') {
+                        messageDiv.innerHTML = `<div class="message" style="background: #2196F3;">
+                            📋 Please run this command on your Jetson:<br>
+                            <code style="background: #000; padding: 5px; display: block; margin-top: 10px; word-break: break-all;">
+                                ${data.command}
+                            </code>
+                        </div>`;
+                    } else {
+                        messageDiv.innerHTML = '<div class="message message-success">✅ Update complete! Refreshing in 5 seconds...</div>';
+                        setTimeout(() => location.reload(), 5000);
+                    }
+                } catch (err) {
+                    messageDiv.innerHTML = '<div class="message message-error">Error applying update</div>';
+                    updateBtn.disabled = false;
+                }
+            }
+
+            // Check for updates on page load
+            checkForUpdates();
         </script>
     </body>
     </html>
@@ -596,6 +677,82 @@ def list_files():
 def download(filename):
     obj = s3.get_object(Bucket=BUCKET, Key=filename)
     return send_file(io.BytesIO(obj["Body"].read()), download_name=filename, as_attachment=True)
+
+# === Update System Endpoints ===
+
+@app.route("/update/check", methods=["GET"])
+def check_update():
+    """Check if updates are available from GitHub"""
+    try:
+        # Get latest commit hash from GitHub
+        github_api_url = "https://api.github.com/repos/espressojuice/dealereye/commits/main"
+        response = requests.get(github_api_url, timeout=5)
+
+        if response.status_code != 200:
+            return jsonify({
+                "error": "Failed to check GitHub",
+                "update_available": False
+            }), 500
+
+        github_commit = response.json()['sha'][:7]  # Short hash
+
+        # Get local commit hash
+        try:
+            result = subprocess.run(
+                ['git', 'rev-parse', '--short', 'HEAD'],
+                cwd='/opt/dealereye',
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            local_commit = result.stdout.strip() if result.returncode == 0 else "unknown"
+        except:
+            local_commit = "unknown"
+
+        update_available = github_commit != local_commit and local_commit != "unknown"
+
+        return jsonify({
+            "update_available": update_available,
+            "local_version": local_commit,
+            "latest_version": github_commit,
+            "update_command": "curl -fsSL https://raw.githubusercontent.com/espressojuice/dealereye/main/install.sh | bash"
+        })
+
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "update_available": False
+        }), 500
+
+@app.route("/update/apply", methods=["POST"])
+def apply_update():
+    """Trigger system update"""
+    try:
+        # Write update trigger file that host script can detect
+        trigger_file = "/app/config/.update_trigger"
+
+        try:
+            with open(trigger_file, 'w') as f:
+                f.write(f"update_requested_at={datetime.now().isoformat()}\n")
+
+            return jsonify({
+                "message": "Update triggered! System will restart in a few seconds...",
+                "status": "triggered"
+            })
+        except Exception as ex:
+            # If we can't write trigger file, return manual instructions
+            return jsonify({
+                "message": "Please run the following command on your Jetson to update:",
+                "command": "curl -fsSL https://raw.githubusercontent.com/espressojuice/dealereye/main/install.sh | bash",
+                "status": "manual",
+                "error": str(ex)
+            })
+
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "status": "error"
+        }), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
