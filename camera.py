@@ -277,23 +277,46 @@ class CameraManager:
 
         Returns:
             CameraStream instance
+
+        Raises:
+            ValueError: If camera_id or stream_url is invalid
+            Exception: If camera creation fails
         """
+        # Validate inputs
+        if not camera_id or not isinstance(camera_id, str):
+            raise ValueError("camera_id must be a non-empty string")
+
+        if not stream_url or not isinstance(stream_url, str):
+            raise ValueError("stream_url must be a non-empty string")
+
         if camera_id in self.cameras:
-            print(f"Camera {camera_id} already exists")
+            print(f"[CameraManager] Camera {camera_id} already exists, returning existing camera")
             return self.cameras[camera_id]
 
-        camera = CameraStream(camera_id, stream_url, self.detector)
-        self.cameras[camera_id] = camera
+        print(f"[CameraManager] Adding camera: {camera_id} with URL: {stream_url}")
 
-        print(f"Added camera: {camera_id}")
+        try:
+            camera = CameraStream(camera_id, stream_url, self.detector)
+            self.cameras[camera_id] = camera
 
-        # Save configuration
-        self.save_config()
+            print(f"[CameraManager] Camera {camera_id} created successfully")
 
-        if auto_start:
-            camera.start()
+            # Save configuration
+            self.save_config()
 
-        return camera
+            if auto_start:
+                print(f"[CameraManager] Auto-starting camera {camera_id}")
+                camera.start()
+
+            return camera
+
+        except Exception as e:
+            # Clean up if something went wrong
+            if camera_id in self.cameras:
+                del self.cameras[camera_id]
+            error_msg = f"Failed to create camera {camera_id}: {str(e)}"
+            print(f"[CameraManager] ERROR: {error_msg}")
+            raise Exception(error_msg)
 
     def start_camera(self, camera_id):
         """Start a specific camera"""
@@ -330,14 +353,61 @@ class CameraManager:
         """Get statistics for all cameras"""
         return {cam_id: cam.get_stats() for cam_id, cam in self.cameras.items()}
 
-    def remove_camera(self, camera_id):
-        """Remove a camera"""
+    def remove_camera(self, camera_id, force=False):
+        """
+        Remove a camera
+
+        Args:
+            camera_id: Camera ID to remove
+            force: If True, remove from config even if not in memory
+
+        Returns:
+            tuple: (success: bool, message: str)
+        """
+        print(f"[CameraManager] Attempting to remove camera: {camera_id}")
+        print(f"[CameraManager] Currently loaded cameras: {list(self.cameras.keys())}")
+
+        # Check if camera exists in memory
         if camera_id in self.cameras:
+            print(f"[CameraManager] Camera {camera_id} found in memory, removing...")
             self.stop_camera(camera_id)
             del self.cameras[camera_id]
             self.save_config()
-            return True
-        return False
+            print(f"[CameraManager] Camera {camera_id} removed successfully")
+            return True, f"Camera {camera_id} removed successfully"
+
+        # Camera not in memory - check if it's in the config file
+        print(f"[CameraManager] Camera {camera_id} not found in memory")
+
+        if force:
+            print(f"[CameraManager] Force mode enabled, attempting to remove from config file...")
+            try:
+                if os.path.exists(self.config_file):
+                    with open(self.config_file, 'r') as f:
+                        config = json.load(f)
+
+                    cameras = config.get("cameras", [])
+                    original_count = len(cameras)
+                    cameras = [c for c in cameras if c.get("camera_id") != camera_id]
+
+                    if len(cameras) < original_count:
+                        config["cameras"] = cameras
+                        with open(self.config_file, 'w') as f:
+                            json.dump(config, f, indent=2)
+                        print(f"[CameraManager] Removed {camera_id} from config file")
+                        return True, f"Camera {camera_id} force-removed from config"
+                    else:
+                        print(f"[CameraManager] Camera {camera_id} not found in config file either")
+                        return False, f"Camera {camera_id} not found in memory or config file"
+                else:
+                    print(f"[CameraManager] Config file does not exist")
+                    return False, "Config file not found"
+            except Exception as e:
+                error_msg = f"Error force-removing camera: {e}"
+                print(f"[CameraManager] {error_msg}")
+                return False, error_msg
+
+        return False, f"Camera {camera_id} not found (loaded cameras: {list(self.cameras.keys())})"
 
     def save_config(self):
         """Save camera configurations to JSON file"""
@@ -356,20 +426,28 @@ class CameraManager:
                 ]
             }
 
-            with open(self.config_file, 'w') as f:
+            # Write to temp file first, then rename (atomic operation)
+            temp_file = self.config_file + ".tmp"
+            with open(temp_file, 'w') as f:
                 json.dump(config, f, indent=2)
 
-            print(f"Saved camera config to {self.config_file}")
+            # Rename temp file to actual config file
+            os.replace(temp_file, self.config_file)
+
+            print(f"[CameraManager] Saved {len(config['cameras'])} camera(s) to {self.config_file}")
 
         except Exception as e:
-            print(f"Error saving config: {e}")
+            print(f"[CameraManager] ERROR saving config: {e}")
+            raise
 
     def load_config(self):
         """Load camera configurations from JSON file and auto-start them"""
         try:
             if not os.path.exists(self.config_file):
-                print(f"No config file found at {self.config_file}, starting fresh")
+                print(f"[CameraManager] No config file found at {self.config_file}, starting fresh")
                 return
+
+            print(f"[CameraManager] Loading configuration from {self.config_file}")
 
             with open(self.config_file, 'r') as f:
                 config = json.load(f)
@@ -377,25 +455,51 @@ class CameraManager:
             cameras = config.get("cameras", [])
 
             if not cameras:
-                print("No cameras in config")
+                print("[CameraManager] No cameras in config")
                 return
 
-            print(f"Loading {len(cameras)} camera(s) from config...")
+            print(f"[CameraManager] Found {len(cameras)} camera(s) in config, loading...")
+
+            loaded_count = 0
+            failed_count = 0
 
             for cam_config in cameras:
                 camera_id = cam_config.get("camera_id")
                 stream_url = cam_config.get("stream_url")
 
-                if camera_id and stream_url:
+                # Validate config entry
+                if not camera_id or not stream_url:
+                    print(f"[CameraManager] WARNING: Skipping invalid config entry: {cam_config}")
+                    failed_count += 1
+                    continue
+
+                try:
                     # Add camera (don't auto-start yet)
                     camera = CameraStream(camera_id, stream_url, self.detector)
                     self.cameras[camera_id] = camera
-                    print(f"Loaded camera: {camera_id}")
+                    print(f"[CameraManager] Loaded camera: {camera_id}")
 
                     # Auto-start the camera
                     camera.start()
+                    loaded_count += 1
 
-            print(f"Successfully loaded and started {len(cameras)} camera(s)")
+                except Exception as e:
+                    print(f"[CameraManager] ERROR: Failed to load camera {camera_id}: {e}")
+                    failed_count += 1
+                    # Clean up if it was partially added
+                    if camera_id in self.cameras:
+                        del self.cameras[camera_id]
 
+            print(f"[CameraManager] Successfully loaded {loaded_count} camera(s), {failed_count} failed")
+
+            # If we had failures, save config to clean it up
+            if failed_count > 0:
+                print(f"[CameraManager] Cleaning up config file to remove failed entries")
+                self.save_config()
+
+        except json.JSONDecodeError as e:
+            print(f"[CameraManager] ERROR: Invalid JSON in config file: {e}")
+            print(f"[CameraManager] Starting with empty camera list")
         except Exception as e:
-            print(f"Error loading config: {e}")
+            print(f"[CameraManager] ERROR loading config: {e}")
+            print(f"[CameraManager] Starting with empty camera list")

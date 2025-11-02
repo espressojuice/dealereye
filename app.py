@@ -383,19 +383,34 @@ def dashboard():
             });
 
             // Remove camera
-            async function removeCamera(cameraId) {
-                if (!confirm(`Are you sure you want to remove camera "${cameraId}"?`)) {
+            async function removeCamera(cameraId, force = false) {
+                if (!force && !confirm(`Are you sure you want to remove camera "${cameraId}"?`)) {
                     return;
                 }
 
                 try {
-                    const response = await fetch(`/cameras/${cameraId}`, {method: 'DELETE'});
+                    const url = force ? `/cameras/${cameraId}?force=true` : `/cameras/${cameraId}`;
+                    const response = await fetch(url, {method: 'DELETE'});
+
                     if (response.ok) {
+                        const result = await response.json();
+                        alert(result.message || 'Camera removed successfully');
                         location.reload();
                     } else {
-                        alert('Failed to remove camera');
+                        const error = await response.json();
+                        console.error('Remove camera error:', error);
+
+                        // If force is available, offer it as an option
+                        if (error.force_available && !force) {
+                            if (confirm(`Failed to remove camera: ${error.error}\n\nWould you like to force-remove it? (This will remove it from config even if it is not loaded in memory)`)) {
+                                await removeCamera(cameraId, true);
+                            }
+                        } else {
+                            alert(`Failed to remove camera: ${error.error || 'Unknown error'}`);
+                        }
                     }
                 } catch (err) {
+                    console.error('Remove camera exception:', err);
                     alert('Error: ' + err.message);
                 }
             }
@@ -661,11 +676,38 @@ def add_camera():
     """Add a new camera. Body: {camera_id: str, stream_url: str}"""
     data = request.get_json()
 
+    # Validate input
     if not data or "camera_id" not in data or "stream_url" not in data:
         return jsonify({"error": "camera_id and stream_url required"}), 400
 
-    camera = camera_manager.add_camera(data["camera_id"], data["stream_url"])
-    return jsonify({"message": f"Camera {data['camera_id']} added", "camera": camera.get_stats()})
+    camera_id = data["camera_id"].strip()
+    stream_url = data["stream_url"].strip()
+
+    # Validate camera_id
+    if not camera_id:
+        return jsonify({"error": "camera_id cannot be empty"}), 400
+
+    # Validate stream_url
+    if not stream_url:
+        return jsonify({"error": "stream_url cannot be empty"}), 400
+
+    if not (stream_url.startswith("rtsp://") or stream_url.startswith("http://") or stream_url.startswith("https://")):
+        return jsonify({"error": "stream_url must start with rtsp://, http://, or https://"}), 400
+
+    # Check if camera already exists
+    if camera_manager.get_camera(camera_id):
+        return jsonify({"error": f"Camera {camera_id} already exists"}), 409
+
+    # Add camera with error handling
+    try:
+        camera = camera_manager.add_camera(camera_id, stream_url)
+        return jsonify({
+            "message": f"Camera {camera_id} added successfully",
+            "camera": camera.get_stats()
+        })
+    except Exception as e:
+        print(f"[API] Error adding camera {camera_id}: {e}")
+        return jsonify({"error": f"Failed to add camera: {str(e)}"}), 500
 
 @app.route("/cameras/<camera_id>/start", methods=["POST"])
 def start_camera(camera_id):
@@ -684,9 +726,19 @@ def stop_camera(camera_id):
 @app.route("/cameras/<camera_id>", methods=["DELETE"])
 def remove_camera(camera_id):
     """Remove a camera"""
-    if camera_manager.remove_camera(camera_id):
-        return jsonify({"message": f"Camera {camera_id} removed"})
-    return jsonify({"error": f"Camera {camera_id} not found"}), 404
+    # Check if force parameter is set
+    force = request.args.get('force', 'false').lower() == 'true'
+
+    success, message = camera_manager.remove_camera(camera_id, force=force)
+
+    if success:
+        return jsonify({"message": message})
+    else:
+        return jsonify({
+            "error": message,
+            "camera_id": camera_id,
+            "force_available": not force  # Suggest force option if not already used
+        }), 404
 
 @app.route("/cameras/<camera_id>/stats", methods=["GET"])
 def camera_stats(camera_id):
@@ -904,6 +956,40 @@ def update_thresholds():
             "message": "Thresholds updated successfully",
             "thresholds": data
         })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# === Debug Endpoints ===
+
+@app.route("/debug/config", methods=["GET"])
+def debug_config():
+    """Debug endpoint to show camera configuration and system state"""
+    try:
+        config_info = {
+            "config_file": camera_manager.config_file,
+            "config_exists": os.path.exists(camera_manager.config_file),
+            "cameras_in_memory": list(camera_manager.cameras.keys()),
+            "cameras_in_config": []
+        }
+
+        # Read config file if it exists
+        if config_info["config_exists"]:
+            try:
+                with open(camera_manager.config_file, 'r') as f:
+                    config_data = json.load(f)
+                    config_info["cameras_in_config"] = [
+                        {
+                            "camera_id": c.get("camera_id"),
+                            "stream_url": c.get("stream_url")
+                        }
+                        for c in config_data.get("cameras", [])
+                    ]
+                    config_info["config_file_contents"] = config_data
+            except Exception as e:
+                config_info["config_read_error"] = str(e)
+
+        return jsonify(config_info)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
