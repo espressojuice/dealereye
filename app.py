@@ -17,7 +17,7 @@ s3 = boto3.client("s3", endpoint_url=ENDPOINT)
 
 # Initialize AI detector and camera manager
 print("Initializing Dealereye AI system...")
-detector = Detector(model_path="yolov8n.pt", conf_threshold=0.35)
+detector = Detector(model_path="yolov8n.pt", conf_threshold=0.25)
 camera_manager = CameraManager(detector=detector)
 print("System ready!")
 
@@ -374,6 +374,8 @@ def dashboard():
             // Update stats every 2 seconds
             async function updateStats() {
                 const cameras = {{ camera_list | tojson }};
+                console.log('updateStats called for cameras:', cameras);
+
                 for (const cameraId of cameras) {
                     try {
                         const response = await fetch(`/cameras/${cameraId}/stats`);
@@ -384,6 +386,7 @@ def dashboard():
                         }
 
                         const data = await response.json();
+                        console.log(`Stats for ${cameraId}:`, data);
 
                         // Update all stats with proper fallbacks
                         const statusEl = document.getElementById(`status-${cameraId}`);
@@ -399,6 +402,8 @@ def dashboard():
                         if (inferenceEl) inferenceEl.textContent = data.avg_inference_ms ? `${data.avg_inference_ms.toFixed(1)}ms` : '0ms';
                         if (urlEl) urlEl.textContent = `RTSP: ${data.stream_url || 'Unknown'}`;
                         if (toggleEl) toggleEl.textContent = data.running ? 'Stop' : 'Start';
+
+                        console.log(`Updated UI for ${cameraId}`);
                     } catch (err) {
                         console.error(`Error fetching stats for ${cameraId}:`, err);
                         // Set error state in UI
@@ -410,21 +415,38 @@ def dashboard():
 
             // Initial update and set interval
             if ({{ camera_list | tojson }}.length > 0) {
-                updateStats();
-                setInterval(updateStats, 2000);
+                // Call updateStats immediately and set up interval
+                setTimeout(() => {
+                    updateStats();
+                    setInterval(updateStats, 2000);
+                }, 100);
             }
 
             // Update system functions
             async function checkForUpdates() {
+                console.log('checkForUpdates called');
                 const messageDiv = document.getElementById('update-message');
                 const versionInfo = document.getElementById('version-info');
                 const updateBtn = document.getElementById('update-btn');
 
+                if (!messageDiv) {
+                    console.error('update-message element not found');
+                    return;
+                }
+
                 messageDiv.innerHTML = '<div class="message" style="background: #666;">⏳ Checking for updates...</div>';
 
                 try {
+                    console.log('Fetching /update/check');
                     const response = await fetch('/update/check');
+                    console.log('Response status:', response.status);
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
                     const data = await response.json();
+                    console.log('Update check data:', data);
 
                     if (data.update_available) {
                         messageDiv.innerHTML = '<div class="message message-success">✨ Update available! Click "Update Now" to install.</div>';
@@ -440,7 +462,8 @@ def dashboard():
                         }, 3000);
                     }
                 } catch (err) {
-                    messageDiv.innerHTML = '<div class="message message-error">❌ Error checking for updates: ' + err.message + '</div>';
+                    console.error('Update check error:', err);
+                    messageDiv.innerHTML = '<div class="message message-error">❌ Error: ' + err.message + '</div>';
                 }
             }
 
@@ -476,8 +499,17 @@ def dashboard():
                 }
             }
 
-            // Check for updates on page load
-            checkForUpdates();
+            // Initialize on page load
+            window.addEventListener('DOMContentLoaded', function() {
+                console.log('Dashboard loaded');
+
+                // Check for updates on page load
+                if (typeof checkForUpdates === 'function') {
+                    checkForUpdates();
+                } else {
+                    console.error('checkForUpdates function not defined');
+                }
+            });
         </script>
     </body>
     </html>
