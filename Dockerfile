@@ -18,7 +18,10 @@ RUN pip3 install --no-cache-dir \
     pillow \
     ultralytics \
     opencv-python \
-    numpy \
+    numpy
+
+# Install PyTorch from CPU-only index
+RUN pip3 install --no-cache-dir \
     torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 # Expose Flask port
