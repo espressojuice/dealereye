@@ -453,7 +453,7 @@ def dashboard():
                         versionInfo.textContent = `Current: ${data.local_version} → Latest: ${data.latest_version}`;
                         updateBtn.style.display = 'inline-block';
                     } else {
-                        messageDiv.innerHTML = '<div class="message" style="background: #4CAF50;">✅ You\'re running the latest version!</div>';
+                        messageDiv.innerHTML = '<div class="message" style="background: #4CAF50;">✅ You are running the latest version!</div>';
                         versionInfo.textContent = `Version: ${data.local_version}`;
                         updateBtn.style.display = 'none';
                         // Keep the "up to date" message visible
