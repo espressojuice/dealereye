@@ -348,15 +348,23 @@ def dashboard():
 
             // Toggle camera start/stop
             async function toggleCamera(cameraId) {
-                const statusEl = document.getElementById(`status-${cameraId}`);
-                const isRunning = statusEl.textContent.includes('Running');
-                const action = isRunning ? 'stop' : 'start';
-
                 try {
+                    // Get current state from server first
+                    const statsResponse = await fetch(`/cameras/${cameraId}/stats`);
+                    const stats = await statsResponse.json();
+                    const isRunning = stats.running;
+                    const action = isRunning ? 'stop' : 'start';
+
+                    // Send the toggle request
                     const response = await fetch(`/cameras/${cameraId}/${action}`, {method: 'POST'});
                     if (response.ok) {
+                        // Update UI immediately for responsiveness
                         document.getElementById(`toggle-${cameraId}`).textContent = isRunning ? 'Start' : 'Stop';
-                        setTimeout(updateStats, 500);
+                        document.getElementById(`status-${cameraId}`).textContent = isRunning ? '⚠️ Stopped' : '✅ Running';
+                        // Then refresh all stats after a short delay
+                        setTimeout(updateStats, 1000);
+                    } else {
+                        alert('Failed to toggle camera');
                     }
                 } catch (err) {
                     alert('Error: ' + err.message);
@@ -369,24 +377,33 @@ def dashboard():
                 for (const cameraId of cameras) {
                     try {
                         const response = await fetch(`/cameras/${cameraId}/stats`);
+
+                        if (!response.ok) {
+                            console.error(`Failed to fetch stats for ${cameraId}: ${response.status}`);
+                            continue;
+                        }
+
                         const data = await response.json();
 
-                        document.getElementById(`status-${cameraId}`).textContent =
-                            data.running ? '✅ Running' : '⚠️ Stopped';
-                        document.getElementById(`fps-${cameraId}`).textContent =
-                            data.fps ? data.fps.toFixed(1) : '--';
-                        document.getElementById(`detections-${cameraId}`).textContent =
-                            data.total_detections || 0;
-                        document.getElementById(`inference-${cameraId}`).textContent =
-                            data.avg_inference_ms ? `${data.avg_inference_ms.toFixed(1)}ms` : '--';
-                        document.getElementById(`url-${cameraId}`).textContent =
-                            `RTSP: ${data.stream_url}`;
+                        // Update all stats with proper fallbacks
+                        const statusEl = document.getElementById(`status-${cameraId}`);
+                        const fpsEl = document.getElementById(`fps-${cameraId}`);
+                        const detectionsEl = document.getElementById(`detections-${cameraId}`);
+                        const inferenceEl = document.getElementById(`inference-${cameraId}`);
+                        const urlEl = document.getElementById(`url-${cameraId}`);
+                        const toggleEl = document.getElementById(`toggle-${cameraId}`);
 
-                        // Update toggle button text
-                        document.getElementById(`toggle-${cameraId}`).textContent =
-                            data.running ? 'Stop' : 'Start';
+                        if (statusEl) statusEl.textContent = data.running ? '✅ Running' : '⚠️ Stopped';
+                        if (fpsEl) fpsEl.textContent = data.fps ? data.fps.toFixed(1) : '0.0';
+                        if (detectionsEl) detectionsEl.textContent = data.total_detections || 0;
+                        if (inferenceEl) inferenceEl.textContent = data.avg_inference_ms ? `${data.avg_inference_ms.toFixed(1)}ms` : '0ms';
+                        if (urlEl) urlEl.textContent = `RTSP: ${data.stream_url || 'Unknown'}`;
+                        if (toggleEl) toggleEl.textContent = data.running ? 'Stop' : 'Start';
                     } catch (err) {
                         console.error(`Error fetching stats for ${cameraId}:`, err);
+                        // Set error state in UI
+                        const statusEl = document.getElementById(`status-${cameraId}`);
+                        if (statusEl) statusEl.textContent = '❌ Error';
                     }
                 }
             }
@@ -403,30 +420,27 @@ def dashboard():
                 const versionInfo = document.getElementById('version-info');
                 const updateBtn = document.getElementById('update-btn');
 
-                messageDiv.innerHTML = '<div class="message" style="background: #666;">Checking for updates...</div>';
+                messageDiv.innerHTML = '<div class="message" style="background: #666;">⏳ Checking for updates...</div>';
 
                 try {
                     const response = await fetch('/update/check');
                     const data = await response.json();
 
                     if (data.update_available) {
-                        messageDiv.innerHTML = '<div class="message message-success">✨ Update available!</div>';
+                        messageDiv.innerHTML = '<div class="message message-success">✨ Update available! Click "Update Now" to install.</div>';
                         versionInfo.textContent = `Current: ${data.local_version} → Latest: ${data.latest_version}`;
                         updateBtn.style.display = 'inline-block';
                     } else {
-                        messageDiv.innerHTML = '<div class="message" style="background: #4CAF50;">✅ You\'re up to date!</div>';
+                        messageDiv.innerHTML = '<div class="message" style="background: #4CAF50;">✅ You\'re running the latest version!</div>';
                         versionInfo.textContent = `Version: ${data.local_version}`;
                         updateBtn.style.display = 'none';
+                        // Keep the "up to date" message visible
+                        setTimeout(() => {
+                            messageDiv.innerHTML = '';
+                        }, 3000);
                     }
-
-                    setTimeout(() => {
-                        messageDiv.innerHTML = '';
-                    }, 5000);
                 } catch (err) {
-                    messageDiv.innerHTML = '<div class="message message-error">Error checking for updates</div>';
-                    setTimeout(() => {
-                        messageDiv.innerHTML = '';
-                    }, 5000);
+                    messageDiv.innerHTML = '<div class="message message-error">❌ Error checking for updates: ' + err.message + '</div>';
                 }
             }
 
