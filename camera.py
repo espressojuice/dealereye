@@ -10,6 +10,7 @@ from queue import Queue
 from datetime import datetime
 from collections import deque
 import os
+import json
 
 class CameraStream:
     def __init__(self, camera_id, stream_url, detector=None):
@@ -231,17 +232,22 @@ class CameraStream:
 class CameraManager:
     """Manages multiple camera streams"""
 
-    def __init__(self, detector=None):
+    def __init__(self, detector=None, config_file="/app/config/cameras.json"):
         self.detector = detector
         self.cameras = {}
+        self.config_file = config_file
 
-    def add_camera(self, camera_id, stream_url):
+        # Load saved camera configurations
+        self.load_config()
+
+    def add_camera(self, camera_id, stream_url, auto_start=False):
         """
         Add a new camera stream
 
         Args:
             camera_id: Unique identifier
             stream_url: RTSP URL
+            auto_start: Whether to start the camera immediately
 
         Returns:
             CameraStream instance
@@ -254,6 +260,13 @@ class CameraManager:
         self.cameras[camera_id] = camera
 
         print(f"Added camera: {camera_id}")
+
+        # Save configuration
+        self.save_config()
+
+        if auto_start:
+            camera.start()
+
         return camera
 
     def start_camera(self, camera_id):
@@ -296,5 +309,67 @@ class CameraManager:
         if camera_id in self.cameras:
             self.stop_camera(camera_id)
             del self.cameras[camera_id]
+            self.save_config()
             return True
         return False
+
+    def save_config(self):
+        """Save camera configurations to JSON file"""
+        try:
+            config_dir = os.path.dirname(self.config_file)
+            if config_dir:
+                os.makedirs(config_dir, exist_ok=True)
+
+            config = {
+                "cameras": [
+                    {
+                        "camera_id": cam_id,
+                        "stream_url": cam.stream_url
+                    }
+                    for cam_id, cam in self.cameras.items()
+                ]
+            }
+
+            with open(self.config_file, 'w') as f:
+                json.dump(config, f, indent=2)
+
+            print(f"Saved camera config to {self.config_file}")
+
+        except Exception as e:
+            print(f"Error saving config: {e}")
+
+    def load_config(self):
+        """Load camera configurations from JSON file and auto-start them"""
+        try:
+            if not os.path.exists(self.config_file):
+                print(f"No config file found at {self.config_file}, starting fresh")
+                return
+
+            with open(self.config_file, 'r') as f:
+                config = json.load(f)
+
+            cameras = config.get("cameras", [])
+
+            if not cameras:
+                print("No cameras in config")
+                return
+
+            print(f"Loading {len(cameras)} camera(s) from config...")
+
+            for cam_config in cameras:
+                camera_id = cam_config.get("camera_id")
+                stream_url = cam_config.get("stream_url")
+
+                if camera_id and stream_url:
+                    # Add camera (don't auto-start yet)
+                    camera = CameraStream(camera_id, stream_url, self.detector)
+                    self.cameras[camera_id] = camera
+                    print(f"Loaded camera: {camera_id}")
+
+                    # Auto-start the camera
+                    camera.start()
+
+            print(f"Successfully loaded and started {len(cameras)} camera(s)")
+
+        except Exception as e:
+            print(f"Error loading config: {e}")

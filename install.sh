@@ -49,11 +49,16 @@ echo "Building Docker image..."
 sudo docker build -t "$APP_NAME" .
 
 echo "Starting container..."
+
+# Create config directory for persistent camera settings
+sudo mkdir -p "${INSTALL_DIR}/config"
+
 sudo docker run -d \
   --restart unless-stopped \
   -p ${PORT}:8080 \
   --name "$CONTAINER_NAME" \
   -v ~/.aws:/root/.aws \
+  -v "${INSTALL_DIR}/config:/app/config" \
   "$APP_NAME"
 
 # 5️⃣ Show status and local URL

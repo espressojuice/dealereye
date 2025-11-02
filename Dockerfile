@@ -24,6 +24,9 @@ RUN pip3 install --no-cache-dir \
 RUN pip3 install --no-cache-dir \
     torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
+# Create config directory for persistent camera settings
+RUN mkdir -p /app/config
+
 # Expose Flask port
 EXPOSE 8080
 
