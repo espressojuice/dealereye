@@ -17,7 +17,7 @@ s3 = boto3.client("s3", endpoint_url=ENDPOINT)
 
 # Initialize AI detector and camera manager
 print("Initializing Dealereye AI system...")
-detector = Detector(model_path="yolov8n.pt", conf_threshold=0.5)
+detector = Detector(model_path="yolov8n.pt", conf_threshold=0.35)
 camera_manager = CameraManager(detector=detector)
 print("System ready!")
 
