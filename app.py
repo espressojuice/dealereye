@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file, Response
+from flask import Flask, request, jsonify, send_file, Response, render_template_string
 import boto3
 import os
 import io
@@ -30,6 +30,184 @@ def home():
         "camera_stats": stats,
         "ai_performance": perf_stats
     })
+
+@app.route("/dashboard")
+def dashboard():
+    """Web dashboard for viewing live camera feeds"""
+    stats = camera_manager.get_all_stats()
+    camera_list = list(stats.keys())
+
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Dealereye Dashboard</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background: #1a1a1a;
+                color: #fff;
+                margin: 0;
+                padding: 20px;
+            }
+            h1 {
+                text-align: center;
+                color: #4CAF50;
+            }
+            .container {
+                max-width: 1400px;
+                margin: 0 auto;
+            }
+            .camera-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+                gap: 20px;
+                margin-top: 30px;
+            }
+            .camera-card {
+                background: #2a2a2a;
+                border-radius: 8px;
+                padding: 15px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            }
+            .camera-card h2 {
+                margin-top: 0;
+                color: #4CAF50;
+                border-bottom: 2px solid #4CAF50;
+                padding-bottom: 10px;
+            }
+            .stream-container {
+                position: relative;
+                width: 100%;
+                background: #000;
+                border-radius: 4px;
+                overflow: hidden;
+            }
+            .stream-container img {
+                width: 100%;
+                height: auto;
+                display: block;
+            }
+            .stats {
+                margin-top: 15px;
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 10px;
+            }
+            .stat-item {
+                background: #1a1a1a;
+                padding: 10px;
+                border-radius: 4px;
+            }
+            .stat-label {
+                color: #888;
+                font-size: 12px;
+                text-transform: uppercase;
+            }
+            .stat-value {
+                font-size: 18px;
+                font-weight: bold;
+                color: #4CAF50;
+            }
+            .no-cameras {
+                text-align: center;
+                padding: 60px 20px;
+                background: #2a2a2a;
+                border-radius: 8px;
+                margin-top: 30px;
+            }
+            .no-cameras h2 {
+                color: #888;
+            }
+            .refresh-btn {
+                background: #4CAF50;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 16px;
+                margin-top: 20px;
+            }
+            .refresh-btn:hover {
+                background: #45a049;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🎥 Dealereye AI Dashboard</h1>
+
+            {% if camera_list %}
+            <div class="camera-grid">
+                {% for camera_id in camera_list %}
+                <div class="camera-card">
+                    <h2>{{ camera_id }}</h2>
+                    <div class="stream-container">
+                        <img src="/cameras/{{ camera_id }}/stream" alt="{{ camera_id }} stream">
+                    </div>
+                    <div class="stats" id="stats-{{ camera_id }}">
+                        <div class="stat-item">
+                            <div class="stat-label">Status</div>
+                            <div class="stat-value" id="status-{{ camera_id }}">Loading...</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">FPS</div>
+                            <div class="stat-value" id="fps-{{ camera_id }}">--</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Detections</div>
+                            <div class="stat-value" id="detections-{{ camera_id }}">--</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">AI Inference</div>
+                            <div class="stat-value" id="inference-{{ camera_id }}">--</div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <script>
+                // Update stats every 2 seconds
+                async function updateStats() {
+                    const cameras = {{ camera_list | tojson }};
+                    for (const cameraId of cameras) {
+                        try {
+                            const response = await fetch(`/cameras/${cameraId}/stats`);
+                            const data = await response.json();
+
+                            document.getElementById(`status-${cameraId}`).textContent =
+                                data.running ? '✅ Running' : '⚠️ Stopped';
+                            document.getElementById(`fps-${cameraId}`).textContent =
+                                data.fps ? data.fps.toFixed(1) : '--';
+                            document.getElementById(`detections-${cameraId}`).textContent =
+                                data.total_detections || 0;
+                            document.getElementById(`inference-${cameraId}`).textContent =
+                                data.avg_inference_ms ? `${data.avg_inference_ms.toFixed(1)}ms` : '--';
+                        } catch (err) {
+                            console.error(`Error fetching stats for ${cameraId}:`, err);
+                        }
+                    }
+                }
+
+                // Initial update and set interval
+                updateStats();
+                setInterval(updateStats, 2000);
+            </script>
+            {% else %}
+            <div class="no-cameras">
+                <h2>No cameras configured</h2>
+                <p>Add a camera using the API to get started.</p>
+                <button class="refresh-btn" onclick="location.reload()">Refresh</button>
+            </div>
+            {% endif %}
+        </div>
+    </body>
+    </html>
+    """
+
+    return render_template_string(html, camera_list=camera_list)
 
 @app.route("/performance", methods=["GET"])
 def performance():
@@ -115,6 +293,39 @@ def camera_snapshot(camera_id):
     # Encode as JPEG
     _, buffer = cv2.imencode('.jpg', frame)
     return Response(buffer.tobytes(), mimetype='image/jpeg')
+
+@app.route("/cameras/<camera_id>/stream", methods=["GET"])
+def camera_stream(camera_id):
+    """Get live MJPEG stream with AI detections"""
+    camera = camera_manager.get_camera(camera_id)
+    if not camera:
+        return jsonify({"error": f"Camera {camera_id} not found"}), 404
+
+    def generate():
+        """Generate MJPEG stream"""
+        import time
+        while True:
+            frame = camera.get_latest_frame()
+            if frame is None:
+                time.sleep(0.1)
+                continue
+
+            # Draw detections
+            detections = camera.get_latest_detections()
+            if detections and detections['detections']:
+                frame = detector.draw_detections(frame, detections['detections'])
+
+            # Encode frame
+            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            frame_bytes = buffer.tobytes()
+
+            # Yield as MJPEG
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+
+            time.sleep(0.033)  # ~30 FPS
+
+    return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route("/cameras/<camera_id>/snapshot/save", methods=["POST"])
 def save_snapshot(camera_id):
