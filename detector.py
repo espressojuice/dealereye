@@ -12,14 +12,15 @@ import os
 import time
 
 class Detector:
-    def __init__(self, model_path="yolov8n.pt", conf_threshold=0.5, auto_tensorrt=True):
+    def __init__(self, model_path="yolov8n.pt", conf_threshold=0.5, auto_tensorrt=True, class_thresholds=None):
         """
         Initialize the detector with YOLOv8 model
 
         Args:
             model_path: Path to YOLOv8 model weights (default: yolov8n.pt for nano)
-            conf_threshold: Confidence threshold for detections (0-1)
+            conf_threshold: Default confidence threshold for detections (0-1)
             auto_tensorrt: Automatically use TensorRT engine if available (default: True)
+            class_thresholds: Dict of per-class thresholds (e.g., {0: 0.5, 63: 0.2})
         """
         # Auto-detect TensorRT engine
         if auto_tensorrt and model_path.endswith('.pt'):
@@ -35,6 +36,9 @@ class Detector:
         self.model_path = model_path
         self.model = YOLO(model_path)
         self.conf_threshold = conf_threshold
+
+        # Per-class confidence thresholds
+        self.class_thresholds = class_thresholds or {}
 
         # Detect model type
         self.is_tensorrt = model_path.endswith('.engine')
@@ -56,7 +60,12 @@ class Detector:
             63: "laptop"
         }
 
+        # Print threshold configuration
         print(f"✅ Detector initialized ({self.model_type} backend)")
+        print(f"   Detection thresholds:")
+        for cls_id, cls_name in self.class_names.items():
+            threshold = self.class_thresholds.get(cls_id, self.conf_threshold)
+            print(f"   - {cls_name}: {int(threshold * 100)}%")
 
     def detect(self, frame):
         """
@@ -76,7 +85,9 @@ class Detector:
         # Track inference time
         start_time = time.time()
 
-        results = self.model(frame, conf=self.conf_threshold, verbose=False)
+        # Use lowest threshold from class_thresholds, or default
+        min_threshold = min(self.class_thresholds.values()) if self.class_thresholds else self.conf_threshold
+        results = self.model(frame, conf=min_threshold, verbose=False)
 
         inference_time = (time.time() - start_time) * 1000  # Convert to ms
         self.inference_times.append(inference_time)
@@ -94,6 +105,12 @@ class Detector:
                 # Only keep target classes
                 if cls_id in self.target_classes:
                     confidence = float(box.conf[0])
+
+                    # Check per-class threshold
+                    required_confidence = self.class_thresholds.get(cls_id, self.conf_threshold)
+                    if confidence < required_confidence:
+                        continue  # Skip this detection
+
                     bbox = box.xyxy[0].tolist()  # [x1, y1, x2, y2]
 
                     detections.append({
