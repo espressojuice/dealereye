@@ -58,6 +58,69 @@ def dashboard():
                 max-width: 1400px;
                 margin: 0 auto;
             }
+            .add-camera-section {
+                background: #2a2a2a;
+                border-radius: 8px;
+                padding: 20px;
+                margin-top: 20px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            }
+            .add-camera-section h2 {
+                margin-top: 0;
+                color: #4CAF50;
+            }
+            .form-group {
+                margin-bottom: 15px;
+            }
+            .form-group label {
+                display: block;
+                margin-bottom: 5px;
+                color: #888;
+                font-size: 14px;
+            }
+            .form-group input {
+                width: 100%;
+                padding: 10px;
+                background: #1a1a1a;
+                border: 1px solid #444;
+                border-radius: 4px;
+                color: #fff;
+                font-size: 14px;
+                box-sizing: border-box;
+            }
+            .form-group input:focus {
+                outline: none;
+                border-color: #4CAF50;
+            }
+            .btn {
+                background: #4CAF50;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 16px;
+                margin-right: 10px;
+            }
+            .btn:hover {
+                background: #45a049;
+            }
+            .btn-danger {
+                background: #f44336;
+            }
+            .btn-danger:hover {
+                background: #da190b;
+            }
+            .btn-warning {
+                background: #ff9800;
+            }
+            .btn-warning:hover {
+                background: #e68900;
+            }
+            .btn-small {
+                padding: 6px 12px;
+                font-size: 14px;
+            }
             .camera-grid {
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
@@ -70,11 +133,21 @@ def dashboard():
                 padding: 15px;
                 box-shadow: 0 4px 6px rgba(0,0,0,0.3);
             }
-            .camera-card h2 {
-                margin-top: 0;
-                color: #4CAF50;
+            .camera-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 15px;
                 border-bottom: 2px solid #4CAF50;
                 padding-bottom: 10px;
+            }
+            .camera-header h2 {
+                margin: 0;
+                color: #4CAF50;
+            }
+            .camera-controls {
+                display: flex;
+                gap: 8px;
             }
             .stream-container {
                 position: relative;
@@ -87,6 +160,12 @@ def dashboard():
                 width: 100%;
                 height: auto;
                 display: block;
+            }
+            .stream-url {
+                font-size: 12px;
+                color: #666;
+                margin-bottom: 10px;
+                word-break: break-all;
             }
             .stats {
                 margin-top: 15px;
@@ -119,18 +198,18 @@ def dashboard():
             .no-cameras h2 {
                 color: #888;
             }
-            .refresh-btn {
+            .message {
+                padding: 10px;
+                border-radius: 4px;
+                margin-bottom: 15px;
+            }
+            .message-success {
                 background: #4CAF50;
                 color: white;
-                border: none;
-                padding: 10px 20px;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 16px;
-                margin-top: 20px;
             }
-            .refresh-btn:hover {
-                background: #45a049;
+            .message-error {
+                background: #f44336;
+                color: white;
             }
         </style>
     </head>
@@ -138,11 +217,38 @@ def dashboard():
         <div class="container">
             <h1>🎥 Dealereye AI Dashboard</h1>
 
+            <!-- Add Camera Section -->
+            <div class="add-camera-section">
+                <h2>➕ Add Camera</h2>
+                <div id="add-message"></div>
+                <form id="add-camera-form">
+                    <div class="form-group">
+                        <label for="camera_id">Camera ID</label>
+                        <input type="text" id="camera_id" name="camera_id" placeholder="e.g., front_gate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="stream_url">RTSP Stream URL</label>
+                        <input type="text" id="stream_url" name="stream_url" placeholder="rtsp://username:password@ip:port/path" required>
+                    </div>
+                    <button type="submit" class="btn">Add Camera</button>
+                </form>
+            </div>
+
+            <!-- Camera Grid -->
             {% if camera_list %}
-            <div class="camera-grid">
+            <div class="camera-grid" id="camera-grid">
                 {% for camera_id in camera_list %}
-                <div class="camera-card">
-                    <h2>{{ camera_id }}</h2>
+                <div class="camera-card" id="card-{{ camera_id }}">
+                    <div class="camera-header">
+                        <h2>{{ camera_id }}</h2>
+                        <div class="camera-controls">
+                            <button class="btn btn-small btn-warning" onclick="toggleCamera('{{ camera_id }}')">
+                                <span id="toggle-{{ camera_id }}">Stop</span>
+                            </button>
+                            <button class="btn btn-small btn-danger" onclick="removeCamera('{{ camera_id }}')">Remove</button>
+                        </div>
+                    </div>
+                    <div class="stream-url" id="url-{{ camera_id }}">Loading URL...</div>
                     <div class="stream-container">
                         <img src="/cameras/{{ camera_id }}/stream" alt="{{ camera_id }} stream">
                     </div>
@@ -167,42 +273,117 @@ def dashboard():
                 </div>
                 {% endfor %}
             </div>
-
-            <script>
-                // Update stats every 2 seconds
-                async function updateStats() {
-                    const cameras = {{ camera_list | tojson }};
-                    for (const cameraId of cameras) {
-                        try {
-                            const response = await fetch(`/cameras/${cameraId}/stats`);
-                            const data = await response.json();
-
-                            document.getElementById(`status-${cameraId}`).textContent =
-                                data.running ? '✅ Running' : '⚠️ Stopped';
-                            document.getElementById(`fps-${cameraId}`).textContent =
-                                data.fps ? data.fps.toFixed(1) : '--';
-                            document.getElementById(`detections-${cameraId}`).textContent =
-                                data.total_detections || 0;
-                            document.getElementById(`inference-${cameraId}`).textContent =
-                                data.avg_inference_ms ? `${data.avg_inference_ms.toFixed(1)}ms` : '--';
-                        } catch (err) {
-                            console.error(`Error fetching stats for ${cameraId}:`, err);
-                        }
-                    }
-                }
-
-                // Initial update and set interval
-                updateStats();
-                setInterval(updateStats, 2000);
-            </script>
             {% else %}
-            <div class="no-cameras">
+            <div class="no-cameras" id="no-cameras-msg">
                 <h2>No cameras configured</h2>
-                <p>Add a camera using the API to get started.</p>
-                <button class="refresh-btn" onclick="location.reload()">Refresh</button>
+                <p>Add a camera using the form above to get started.</p>
             </div>
             {% endif %}
         </div>
+
+        <script>
+            // Add camera
+            document.getElementById('add-camera-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const cameraId = document.getElementById('camera_id').value;
+                const streamUrl = document.getElementById('stream_url').value;
+                const messageDiv = document.getElementById('add-message');
+
+                try {
+                    const response = await fetch('/cameras', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({camera_id: cameraId, stream_url: streamUrl})
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        messageDiv.innerHTML = '<div class="message message-success">Camera added successfully!</div>';
+                        document.getElementById('add-camera-form').reset();
+
+                        // Start the camera
+                        await fetch(`/cameras/${cameraId}/start`, {method: 'POST'});
+
+                        // Reload page after 1 second
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        messageDiv.innerHTML = `<div class="message message-error">Error: ${data.error}</div>`;
+                    }
+                } catch (err) {
+                    messageDiv.innerHTML = `<div class="message message-error">Error: ${err.message}</div>`;
+                }
+            });
+
+            // Remove camera
+            async function removeCamera(cameraId) {
+                if (!confirm(`Are you sure you want to remove camera "${cameraId}"?`)) {
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`/cameras/${cameraId}`, {method: 'DELETE'});
+                    if (response.ok) {
+                        location.reload();
+                    } else {
+                        alert('Failed to remove camera');
+                    }
+                } catch (err) {
+                    alert('Error: ' + err.message);
+                }
+            }
+
+            // Toggle camera start/stop
+            async function toggleCamera(cameraId) {
+                const statusEl = document.getElementById(`status-${cameraId}`);
+                const isRunning = statusEl.textContent.includes('Running');
+                const action = isRunning ? 'stop' : 'start';
+
+                try {
+                    const response = await fetch(`/cameras/${cameraId}/${action}`, {method: 'POST'});
+                    if (response.ok) {
+                        document.getElementById(`toggle-${cameraId}`).textContent = isRunning ? 'Start' : 'Stop';
+                        setTimeout(updateStats, 500);
+                    }
+                } catch (err) {
+                    alert('Error: ' + err.message);
+                }
+            }
+
+            // Update stats every 2 seconds
+            async function updateStats() {
+                const cameras = {{ camera_list | tojson }};
+                for (const cameraId of cameras) {
+                    try {
+                        const response = await fetch(`/cameras/${cameraId}/stats`);
+                        const data = await response.json();
+
+                        document.getElementById(`status-${cameraId}`).textContent =
+                            data.running ? '✅ Running' : '⚠️ Stopped';
+                        document.getElementById(`fps-${cameraId}`).textContent =
+                            data.fps ? data.fps.toFixed(1) : '--';
+                        document.getElementById(`detections-${cameraId}`).textContent =
+                            data.total_detections || 0;
+                        document.getElementById(`inference-${cameraId}`).textContent =
+                            data.avg_inference_ms ? `${data.avg_inference_ms.toFixed(1)}ms` : '--';
+                        document.getElementById(`url-${cameraId}`).textContent =
+                            `RTSP: ${data.stream_url}`;
+
+                        // Update toggle button text
+                        document.getElementById(`toggle-${cameraId}`).textContent =
+                            data.running ? 'Stop' : 'Start';
+                    } catch (err) {
+                        console.error(`Error fetching stats for ${cameraId}:`, err);
+                    }
+                }
+            }
+
+            // Initial update and set interval
+            if ({{ camera_list | tojson }}.length > 0) {
+                updateStats();
+                setInterval(updateStats, 2000);
+            }
+        </script>
     </body>
     </html>
     """
