@@ -379,6 +379,9 @@ def dashboard():
                 <div class="menu-item" onclick="openModal('updates-modal')">
                     🔄 Updates
                 </div>
+                <div class="menu-item" onclick="openModal('system-info-modal')">
+                    📊 System Info
+                </div>
             </div>
         </div>
 
@@ -468,6 +471,47 @@ def dashboard():
                 <button class="btn btn-warning" id="update-now-btn" onclick="applyUpdate()" style="display: none;">
                     Update Now
                 </button>
+            </div>
+        </div>
+
+        <!-- Modal: System Info -->
+        <div class="modal" id="system-info-modal">
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <h2>📊 System Information</h2>
+            <div id="system-info-loading" style="color: #888; text-align: center; padding: 20px;">
+                Loading system information...
+            </div>
+            <div id="system-info-content" style="display: none;">
+                <div style="background: #1a1a1a; padding: 15px; border-radius: 4px; margin-bottom: 15px;">
+                    <h3 style="margin-top: 0; color: #4CAF50; font-size: 16px;">🎮 GPU / AI Acceleration</h3>
+                    <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px 15px; font-size: 14px;">
+                        <span style="color: #888;">Status:</span>
+                        <span id="gpu-status" style="color: #4CAF50; font-weight: bold;">-</span>
+
+                        <span style="color: #888;">Device:</span>
+                        <span id="gpu-device" style="color: #fff;">-</span>
+
+                        <span style="color: #888;">AI Model:</span>
+                        <span id="ai-model" style="color: #fff;">-</span>
+                    </div>
+                </div>
+
+                <div style="background: #1a1a1a; padding: 15px; border-radius: 4px;">
+                    <h3 style="margin-top: 0; color: #4CAF50; font-size: 16px;">⚡ Performance</h3>
+                    <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px 15px; font-size: 14px;">
+                        <span style="color: #888;">Avg Inference:</span>
+                        <span id="avg-inference" style="color: #fff;">-</span>
+
+                        <span style="color: #888;">Total Detections:</span>
+                        <span id="total-detections" style="color: #fff;">-</span>
+
+                        <span style="color: #888;">CPU Usage:</span>
+                        <span id="cpu-usage" style="color: #fff;">-</span>
+
+                        <span style="color: #888;">Memory Usage:</span>
+                        <span id="memory-usage" style="color: #fff;">-</span>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -597,6 +641,50 @@ def dashboard():
                 const overlay = document.getElementById('overlay');
                 modal.classList.add('active');
                 overlay.classList.add('active');
+
+                // Load system info when opening system info modal
+                if (modalId === 'system-info-modal') {
+                    loadSystemInfo();
+                }
+            }
+
+            async function loadSystemInfo() {
+                const loadingEl = document.getElementById('system-info-loading');
+                const contentEl = document.getElementById('system-info-content');
+
+                loadingEl.style.display = 'block';
+                contentEl.style.display = 'none';
+
+                try {
+                    const response = await fetch('/debug/performance');
+                    const data = await response.json();
+
+                    // GPU Status
+                    if (data.gpu.available) {
+                        document.getElementById('gpu-status').textContent = '✅ GPU Enabled';
+                        document.getElementById('gpu-status').style.color = '#4CAF50';
+                        document.getElementById('gpu-device').textContent = data.gpu.device_name || 'Unknown GPU';
+                    } else {
+                        document.getElementById('gpu-status').textContent = '❌ CPU Only';
+                        document.getElementById('gpu-status').style.color = '#f44336';
+                        document.getElementById('gpu-device').textContent = 'No GPU detected';
+                    }
+
+                    // AI Model
+                    const modelType = data.model.type === 'TensorRT' ? '🚀 TensorRT (optimized)' : '💡 PyTorch';
+                    document.getElementById('ai-model').textContent = `${modelType} - ${data.model.path}`;
+
+                    // Performance
+                    document.getElementById('avg-inference').textContent = `${data.model.avg_inference_ms}ms`;
+                    document.getElementById('total-detections').textContent = data.model.total_detections.toLocaleString();
+                    document.getElementById('cpu-usage').textContent = `${data.system.cpu_percent}%`;
+                    document.getElementById('memory-usage').textContent = `${data.system.memory_percent}% (${data.system.memory_available_mb}MB available)`;
+
+                    loadingEl.style.display = 'none';
+                    contentEl.style.display = 'block';
+                } catch (err) {
+                    loadingEl.innerHTML = '<div class="message message-error">❌ Error loading system info: ' + err.message + '</div>';
+                }
             }
 
             function closeModal() {
