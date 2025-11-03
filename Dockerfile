@@ -31,7 +31,7 @@ RUN chmod +x /app/update.sh
 # Install opencv and remove problematic modules that cause circular imports on Jetson
 RUN pip3 install --no-cache-dir --upgrade 'numpy>=1.23.0,<2.0.0' && \
     pip3 install --no-cache-dir \
-    'opencv-python-headless==4.1.2.30' \
+    'opencv-python-headless==4.5.1.48' \
     boto3 \
     flask \
     requests \
