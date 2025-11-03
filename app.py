@@ -65,6 +65,137 @@ def dashboard():
             h1 {
                 text-align: center;
                 color: #4CAF50;
+                margin-left: 60px; /* Space for hamburger menu */
+            }
+
+            /* Hamburger Menu Styles */
+            .hamburger-btn {
+                position: fixed;
+                top: 20px;
+                left: 20px;
+                z-index: 1001;
+                background: #4CAF50;
+                border: none;
+                border-radius: 4px;
+                padding: 10px;
+                cursor: pointer;
+                width: 40px;
+                height: 40px;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-around;
+                align-items: center;
+            }
+            .hamburger-btn span {
+                display: block;
+                width: 24px;
+                height: 3px;
+                background: white;
+                border-radius: 2px;
+                transition: all 0.3s;
+            }
+            .hamburger-btn:hover {
+                background: #45a049;
+            }
+
+            .sidebar {
+                position: fixed;
+                left: -320px;
+                top: 0;
+                width: 320px;
+                height: 100%;
+                background: #2a2a2a;
+                box-shadow: 2px 0 10px rgba(0,0,0,0.5);
+                transition: left 0.3s ease;
+                z-index: 1000;
+                overflow-y: auto;
+                padding: 80px 20px 20px 20px;
+            }
+            .sidebar.open {
+                left: 0;
+            }
+            .sidebar h2 {
+                color: #4CAF50;
+                font-size: 18px;
+                margin-top: 30px;
+                margin-bottom: 15px;
+                padding-bottom: 8px;
+                border-bottom: 2px solid #4CAF50;
+            }
+            .sidebar h2:first-child {
+                margin-top: 0;
+            }
+            .menu-section {
+                margin-bottom: 20px;
+            }
+            .menu-item {
+                padding: 10px;
+                margin: 5px 0;
+                background: #1a1a1a;
+                border-radius: 4px;
+                cursor: pointer;
+                transition: background 0.2s;
+            }
+            .menu-item:hover {
+                background: #333;
+            }
+
+            .overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.7);
+                z-index: 999;
+                display: none;
+            }
+            .overlay.active {
+                display: block;
+            }
+
+            .modal {
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: #2a2a2a;
+                border-radius: 8px;
+                padding: 30px;
+                max-width: 500px;
+                width: 90%;
+                max-height: 80vh;
+                overflow-y: auto;
+                z-index: 1002;
+                display: none;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            }
+            .modal.active {
+                display: block;
+            }
+            .modal h2 {
+                margin-top: 0;
+                color: #4CAF50;
+                border-bottom: 2px solid #4CAF50;
+                padding-bottom: 10px;
+            }
+            .modal-close {
+                position: absolute;
+                top: 15px;
+                right: 15px;
+                background: none;
+                border: none;
+                color: #888;
+                font-size: 24px;
+                cursor: pointer;
+                width: 30px;
+                height: 30px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .modal-close:hover {
+                color: #fff;
             }
             .container {
                 max-width: 1400px;
@@ -226,81 +357,166 @@ def dashboard():
         </style>
     </head>
     <body>
+        <!-- Hamburger Menu Button -->
+        <button class="hamburger-btn" onclick="toggleMenu()">
+            <span></span>
+            <span></span>
+            <span></span>
+        </button>
+
+        <!-- Sidebar Menu -->
+        <div class="sidebar" id="sidebar">
+            <h2>📷 Cameras</h2>
+            <div class="menu-section">
+                <div class="menu-item" onclick="openModal('add-camera-modal')">
+                    ➕ Add Camera
+                </div>
+            </div>
+
+            <h2>🎯 AI Settings</h2>
+            <div class="menu-section">
+                <div class="menu-item" onclick="openModal('global-thresholds-modal')">
+                    🎚️ Global Thresholds
+                </div>
+            </div>
+
+            <h2>⚙️ System</h2>
+            <div class="menu-section">
+                <div class="menu-item" onclick="openModal('updates-modal')">
+                    🔄 Updates
+                </div>
+            </div>
+        </div>
+
+        <!-- Overlay -->
+        <div class="overlay" id="overlay" onclick="closeMenu(); closeModal()"></div>
+
+        <!-- Modal: Add Camera -->
+        <div class="modal" id="add-camera-modal">
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <h2>➕ Add Camera</h2>
+            <div id="add-message"></div>
+            <form id="add-camera-form">
+                <div class="form-group">
+                    <label for="camera_id">Camera ID</label>
+                    <input type="text" id="camera_id" name="camera_id" placeholder="e.g., front_gate" required>
+                </div>
+                <div class="form-group">
+                    <label for="stream_url">RTSP Stream URL</label>
+                    <input type="text" id="stream_url" name="stream_url" placeholder="rtsp://username:password@ip:port/path" required>
+                </div>
+                <button type="submit" class="btn">Add Camera</button>
+            </form>
+        </div>
+
+        <!-- Modal: Global Thresholds -->
+        <div class="modal" id="global-thresholds-modal">
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <h2>🎯 Global AI Detection Thresholds</h2>
+            <p style="color: #888; font-size: 14px; margin-top: 0;">These are default thresholds. Each camera can have its own custom thresholds.</p>
+            <div id="threshold-message"></div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                <div class="form-group">
+                    <label for="thresh_person">👤 Person: <span id="val_person">50</span>%</label>
+                    <input type="range" id="thresh_person" min="10" max="90" value="50" step="5"
+                           oninput="document.getElementById('val_person').textContent = this.value"
+                           style="width: 100%;">
+                </div>
+                <div class="form-group">
+                    <label for="thresh_laptop">💻 Laptop: <span id="val_laptop">20</span>%</label>
+                    <input type="range" id="thresh_laptop" min="10" max="90" value="20" step="5"
+                           oninput="document.getElementById('val_laptop').textContent = this.value"
+                           style="width: 100%;">
+                </div>
+                <div class="form-group">
+                    <label for="thresh_car">🚗 Car: <span id="val_car">25</span>%</label>
+                    <input type="range" id="thresh_car" min="10" max="90" value="25" step="5"
+                           oninput="document.getElementById('val_car').textContent = this.value"
+                           style="width: 100%;">
+                </div>
+                <div class="form-group">
+                    <label for="thresh_motorcycle">🏍️ Motorcycle: <span id="val_motorcycle">25</span>%</label>
+                    <input type="range" id="thresh_motorcycle" min="10" max="90" value="25" step="5"
+                           oninput="document.getElementById('val_motorcycle').textContent = this.value"
+                           style="width: 100%;">
+                </div>
+                <div class="form-group">
+                    <label for="thresh_bus">🚌 Bus: <span id="val_bus">25</span>%</label>
+                    <input type="range" id="thresh_bus" min="10" max="90" value="25" step="5"
+                           oninput="document.getElementById('val_bus').textContent = this.value"
+                           style="width: 100%;">
+                </div>
+                <div class="form-group">
+                    <label for="thresh_truck">🚚 Truck: <span id="val_truck">25</span>%</label>
+                    <input type="range" id="thresh_truck" min="10" max="90" value="25" step="5"
+                           oninput="document.getElementById('val_truck').textContent = this.value"
+                           style="width: 100%;">
+                </div>
+            </div>
+            <button type="button" class="btn" onclick="updateThresholds()">Apply Global Thresholds</button>
+        </div>
+
+        <!-- Modal: System Updates -->
+        <div class="modal" id="updates-modal">
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <h2>🔄 System Updates</h2>
+            <div id="update-message"></div>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <button class="btn" onclick="checkForUpdates()">Check for Updates</button>
+                <button class="btn btn-warning" id="update-btn" onclick="applyUpdate()" style="display: none;">Update Now</button>
+                <span id="version-info" style="color: #888; font-size: 14px;"></span>
+            </div>
+        </div>
+
+        <!-- Modal: Per-Camera Thresholds -->
+        <div class="modal" id="camera-thresholds-modal">
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <h2 id="camera-thresholds-title">🎯 Camera AI Thresholds</h2>
+            <p style="color: #888; font-size: 14px; margin-top: 0;">Set custom detection thresholds for this camera.</p>
+            <div id="camera-threshold-message"></div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                <div class="form-group">
+                    <label for="cam_thresh_person">👤 Person: <span id="cam_val_person">50</span>%</label>
+                    <input type="range" id="cam_thresh_person" min="10" max="90" value="50" step="5"
+                           oninput="document.getElementById('cam_val_person').textContent = this.value"
+                           style="width: 100%;">
+                </div>
+                <div class="form-group">
+                    <label for="cam_thresh_laptop">💻 Laptop: <span id="cam_val_laptop">20</span>%</label>
+                    <input type="range" id="cam_thresh_laptop" min="10" max="90" value="20" step="5"
+                           oninput="document.getElementById('cam_val_laptop').textContent = this.value"
+                           style="width: 100%;">
+                </div>
+                <div class="form-group">
+                    <label for="cam_thresh_car">🚗 Car: <span id="cam_val_car">25</span>%</label>
+                    <input type="range" id="cam_thresh_car" min="10" max="90" value="25" step="5"
+                           oninput="document.getElementById('cam_val_car').textContent = this.value"
+                           style="width: 100%;">
+                </div>
+                <div class="form-group">
+                    <label for="cam_thresh_motorcycle">🏍️ Motorcycle: <span id="cam_val_motorcycle">25</span>%</label>
+                    <input type="range" id="cam_thresh_motorcycle" min="10" max="90" value="25" step="5"
+                           oninput="document.getElementById('cam_val_motorcycle').textContent = this.value"
+                           style="width: 100%;">
+                </div>
+                <div class="form-group">
+                    <label for="cam_thresh_bus">🚌 Bus: <span id="cam_val_bus">25</span>%</label>
+                    <input type="range" id="cam_thresh_bus" min="10" max="90" value="25" step="5"
+                           oninput="document.getElementById('cam_val_bus').textContent = this.value"
+                           style="width: 100%;">
+                </div>
+                <div class="form-group">
+                    <label for="cam_thresh_truck">🚚 Truck: <span id="cam_val_truck">25</span>%</label>
+                    <input type="range" id="cam_thresh_truck" min="10" max="90" value="25" step="5"
+                           oninput="document.getElementById('cam_val_truck').textContent = this.value"
+                           style="width: 100%;">
+                </div>
+            </div>
+            <button type="button" class="btn" onclick="saveCameraThresholds()">Save Camera Thresholds</button>
+        </div>
+
         <div class="container">
             <h1>🎥 Dealereye AI Dashboard</h1>
-
-            <!-- Update Section -->
-            <div class="add-camera-section" id="update-section">
-                <h2>🔄 System Updates</h2>
-                <div id="update-message"></div>
-                <div style="display: flex; gap: 10px; align-items: center;">
-                    <button class="btn" onclick="checkForUpdates()">Check for Updates</button>
-                    <button class="btn btn-warning" id="update-btn" onclick="applyUpdate()" style="display: none;">Update Now</button>
-                    <span id="version-info" style="color: #888; font-size: 14px;"></span>
-                </div>
-            </div>
-
-            <!-- AI Detection Settings -->
-            <div class="add-camera-section">
-                <h2>🎯 AI Detection Thresholds</h2>
-                <div id="threshold-message"></div>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
-                    <div class="form-group">
-                        <label for="thresh_person">👤 Person: <span id="val_person">50</span>%</label>
-                        <input type="range" id="thresh_person" min="10" max="90" value="50" step="5"
-                               oninput="document.getElementById('val_person').textContent = this.value"
-                               style="width: 100%;">
-                    </div>
-                    <div class="form-group">
-                        <label for="thresh_laptop">💻 Laptop: <span id="val_laptop">20</span>%</label>
-                        <input type="range" id="thresh_laptop" min="10" max="90" value="20" step="5"
-                               oninput="document.getElementById('val_laptop').textContent = this.value"
-                               style="width: 100%;">
-                    </div>
-                    <div class="form-group">
-                        <label for="thresh_car">🚗 Car: <span id="val_car">25</span>%</label>
-                        <input type="range" id="thresh_car" min="10" max="90" value="25" step="5"
-                               oninput="document.getElementById('val_car').textContent = this.value"
-                               style="width: 100%;">
-                    </div>
-                    <div class="form-group">
-                        <label for="thresh_motorcycle">🏍️ Motorcycle: <span id="val_motorcycle">25</span>%</label>
-                        <input type="range" id="thresh_motorcycle" min="10" max="90" value="25" step="5"
-                               oninput="document.getElementById('val_motorcycle').textContent = this.value"
-                               style="width: 100%;">
-                    </div>
-                    <div class="form-group">
-                        <label for="thresh_bus">🚌 Bus: <span id="val_bus">25</span>%</label>
-                        <input type="range" id="thresh_bus" min="10" max="90" value="25" step="5"
-                               oninput="document.getElementById('val_bus').textContent = this.value"
-                               style="width: 100%;">
-                    </div>
-                    <div class="form-group">
-                        <label for="thresh_truck">🚚 Truck: <span id="val_truck">25</span>%</label>
-                        <input type="range" id="thresh_truck" min="10" max="90" value="25" step="5"
-                               oninput="document.getElementById('val_truck').textContent = this.value"
-                               style="width: 100%;">
-                    </div>
-                </div>
-                <button type="button" class="btn" onclick="updateThresholds()">Apply Thresholds</button>
-            </div>
-
-            <!-- Add Camera Section -->
-            <div class="add-camera-section">
-                <h2>➕ Add Camera</h2>
-                <div id="add-message"></div>
-                <form id="add-camera-form">
-                    <div class="form-group">
-                        <label for="camera_id">Camera ID</label>
-                        <input type="text" id="camera_id" name="camera_id" placeholder="e.g., front_gate" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="stream_url">RTSP Stream URL</label>
-                        <input type="text" id="stream_url" name="stream_url" placeholder="rtsp://username:password@ip:port/path" required>
-                    </div>
-                    <button type="submit" class="btn">Add Camera</button>
-                </form>
-            </div>
 
             <!-- Camera Grid -->
             {% if camera_list %}
@@ -310,6 +526,9 @@ def dashboard():
                     <div class="camera-header">
                         <h2>{{ camera_id }}</h2>
                         <div class="camera-controls">
+                            <button class="btn btn-small" onclick="openCameraThresholds('{{ camera_id }}')" style="background: #2196F3;">
+                                🎯 Thresholds
+                            </button>
                             <button class="btn btn-small btn-warning" onclick="toggleCamera('{{ camera_id }}')">
                                 <span id="toggle-{{ camera_id }}">Stop</span>
                             </button>
@@ -350,6 +569,115 @@ def dashboard():
         </div>
 
         <script>
+            // Hamburger menu and modal functions
+            let currentCameraId = null; // Track which camera's thresholds we're editing
+
+            function toggleMenu() {
+                const sidebar = document.getElementById('sidebar');
+                const overlay = document.getElementById('overlay');
+                sidebar.classList.toggle('open');
+                overlay.classList.toggle('active');
+            }
+
+            function closeMenu() {
+                const sidebar = document.getElementById('sidebar');
+                const overlay = document.getElementById('overlay');
+                sidebar.classList.remove('open');
+                if (!document.querySelector('.modal.active')) {
+                    overlay.classList.remove('active');
+                }
+            }
+
+            function openModal(modalId) {
+                closeMenu();
+                const modal = document.getElementById(modalId);
+                const overlay = document.getElementById('overlay');
+                modal.classList.add('active');
+                overlay.classList.add('active');
+            }
+
+            function closeModal() {
+                const modals = document.querySelectorAll('.modal');
+                modals.forEach(m => m.classList.remove('active'));
+                const overlay = document.getElementById('overlay');
+                overlay.classList.remove('active');
+                currentCameraId = null; // Clear current camera
+            }
+
+            async function openCameraThresholds(cameraId) {
+                currentCameraId = cameraId;
+                const titleEl = document.getElementById('camera-thresholds-title');
+                titleEl.textContent = `🎯 ${cameraId} - AI Thresholds`;
+
+                // Load current thresholds for this camera
+                try {
+                    const response = await fetch(`/cameras/${cameraId}/thresholds`);
+                    const data = await response.json();
+                    const thresholds = data.thresholds;
+
+                    // Update sliders with camera's current values
+                    document.getElementById('cam_thresh_person').value = thresholds.person || 50;
+                    document.getElementById('cam_val_person').textContent = thresholds.person || 50;
+
+                    document.getElementById('cam_thresh_laptop').value = thresholds.laptop || 20;
+                    document.getElementById('cam_val_laptop').textContent = thresholds.laptop || 20;
+
+                    document.getElementById('cam_thresh_car').value = thresholds.car || 25;
+                    document.getElementById('cam_val_car').textContent = thresholds.car || 25;
+
+                    document.getElementById('cam_thresh_motorcycle').value = thresholds.motorcycle || 25;
+                    document.getElementById('cam_val_motorcycle').textContent = thresholds.motorcycle || 25;
+
+                    document.getElementById('cam_thresh_bus').value = thresholds.bus || 25;
+                    document.getElementById('cam_val_bus').textContent = thresholds.bus || 25;
+
+                    document.getElementById('cam_thresh_truck').value = thresholds.truck || 25;
+                    document.getElementById('cam_val_truck').textContent = thresholds.truck || 25;
+
+                } catch (err) {
+                    console.error('Error loading camera thresholds:', err);
+                }
+
+                openModal('camera-thresholds-modal');
+            }
+
+            async function saveCameraThresholds() {
+                if (!currentCameraId) return;
+
+                const messageDiv = document.getElementById('camera-threshold-message');
+
+                try {
+                    const thresholds = {
+                        person: parseInt(document.getElementById('cam_thresh_person').value),
+                        laptop: parseInt(document.getElementById('cam_thresh_laptop').value),
+                        car: parseInt(document.getElementById('cam_thresh_car').value),
+                        motorcycle: parseInt(document.getElementById('cam_thresh_motorcycle').value),
+                        bus: parseInt(document.getElementById('cam_thresh_bus').value),
+                        truck: parseInt(document.getElementById('cam_thresh_truck').value)
+                    };
+
+                    const response = await fetch(`/cameras/${currentCameraId}/thresholds`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(thresholds)
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        messageDiv.innerHTML = '<div class="message message-success">✅ Thresholds updated!</div>';
+                        setTimeout(() => {
+                            messageDiv.innerHTML = '';
+                            closeModal();
+                        }, 2000);
+                    } else {
+                        messageDiv.innerHTML = `<div class="message message-error">❌ Error: ${data.error}</div>`;
+                    }
+                } catch (err) {
+                    messageDiv.innerHTML = `<div class="message message-error">❌ Error: ${err.message}</div>`;
+                }
+            }
+
             // Add camera
             document.getElementById('add-camera-form').addEventListener('submit', async (e) => {
                 e.preventDefault();
@@ -373,8 +701,11 @@ def dashboard():
                         // Start the camera
                         await fetch(`/cameras/${cameraId}/start`, {method: 'POST'});
 
-                        // Reload page after 1 second
-                        setTimeout(() => location.reload(), 1000);
+                        // Close modal and reload page after 1 second
+                        setTimeout(() => {
+                            closeModal();
+                            location.reload();
+                        }, 1000);
                     } else {
                         messageDiv.innerHTML = `<div class="message message-error">Error: ${data.error}</div>`;
                     }
@@ -694,12 +1025,7 @@ def dashboard():
                 // Load current thresholds
                 loadThresholds();
 
-                // Check for updates on page load
-                if (typeof checkForUpdates === 'function') {
-                    checkForUpdates();
-                } else {
-                    console.error('checkForUpdates function not defined');
-                }
+                // Don't check for updates automatically - only when user opens updates modal
             });
         </script>
     </body>
