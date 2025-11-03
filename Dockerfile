@@ -25,11 +25,15 @@ RUN apt-get update && \
     flask \
     requests \
     pillow \
-    'ultralytics<8.3' \
     numpy \
-    psutil && \
-    rm -rf /usr/local/lib/python3.8/dist-packages/cv2 && \
-    rm -rf /usr/local/lib/python3.8/dist-packages/opencv_*
+    psutil \
+    matplotlib \
+    pyyaml \
+    scipy \
+    tqdm \
+    pandas \
+    seaborn && \
+    pip3 install --no-cache-dir --no-deps 'ultralytics<8.3'
 
 # Create config directory for persistent camera settings
 RUN mkdir -p /app/config
