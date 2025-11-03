@@ -79,6 +79,10 @@ sudo docker run -d \
   --name "$CONTAINER_NAME" \
   -v ~/.aws:/root/.aws \
   -v "${INSTALL_DIR}/config:/app/config" \
+  -v /usr/bin/docker:/usr/bin/docker \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /usr/bin/curl:/usr/bin/curl \
+  -v /usr/bin/bash:/usr/bin/bash \
   ${TENSORRT_MOUNT} \
   ${PERF_ENV} \
   "$APP_NAME"
