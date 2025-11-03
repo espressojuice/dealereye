@@ -11,6 +11,9 @@ RUN apt-get update && \
 WORKDIR /app
 COPY . /app
 
+# Make update script executable
+RUN chmod +x /app/update.sh
+
 # Install Python packages (PyTorch already included in base image with CUDA support)
 RUN pip3 install --no-cache-dir \
     boto3 \

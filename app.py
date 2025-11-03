@@ -545,33 +545,74 @@ def dashboard():
             }
 
             async function applyUpdate() {
-                if (!confirm('This will update the system and restart the container. Continue?')) {
+                if (!confirm('This will automatically update the system by:\n\n1. Pulling latest code from GitHub\n2. Rebuilding the Docker image\n3. Restarting the container\n\nThe dashboard will be unavailable for 2-3 minutes. Continue?')) {
                     return;
                 }
 
                 const messageDiv = document.getElementById('update-message');
                 const updateBtn = document.getElementById('update-btn');
 
-                messageDiv.innerHTML = '<div class="message" style="background: #ff9800;">⏳ Updating system...</div>';
+                messageDiv.innerHTML = '<div class="message" style="background: #ff9800;">🔄 Starting automatic update...</div>';
                 updateBtn.disabled = true;
 
                 try {
                     const response = await fetch('/update/apply', {method: 'POST'});
                     const data = await response.json();
 
-                    if (data.status === 'manual') {
-                        messageDiv.innerHTML = `<div class="message" style="background: #2196F3;">
-                            📋 Please run this command on your Jetson:<br>
+                    if (data.status === 'updating') {
+                        // Show update in progress message with countdown
+                        messageDiv.innerHTML = `<div class="message" style="background: #ff9800;">
+                            🔄 <strong>Update in progress!</strong><br><br>
+                            The system is now:<br>
+                            1. ✅ Pulling latest code from GitHub<br>
+                            2. ⏳ Rebuilding Docker image (this takes 2-3 minutes)<br>
+                            3. ⏳ Restarting container<br><br>
+                            <div id="countdown" style="font-size: 1.2em; margin-top: 10px;">Checking if ready in <span id="seconds">180</span> seconds...</div>
+                        </div>`;
+
+                        // Start countdown and auto-refresh check
+                        let seconds = 180;
+                        const countdownInterval = setInterval(() => {
+                            seconds--;
+                            const secsElement = document.getElementById('seconds');
+                            if (secsElement) {
+                                secsElement.textContent = seconds;
+                            }
+
+                            if (seconds <= 0) {
+                                clearInterval(countdownInterval);
+                                location.reload();
+                            }
+                        }, 1000);
+
+                        // Also try to ping the server every 10 seconds to see if it's back
+                        const checkInterval = setInterval(async () => {
+                            try {
+                                const pingResponse = await fetch('/');
+                                if (pingResponse.ok) {
+                                    clearInterval(checkInterval);
+                                    clearInterval(countdownInterval);
+                                    messageDiv.innerHTML = '<div class="message message-success">✅ Update complete! Reloading dashboard...</div>';
+                                    setTimeout(() => location.reload(), 2000);
+                                }
+                            } catch (e) {
+                                // Server not ready yet, keep waiting
+                            }
+                        }, 10000);
+
+                    } else if (data.status === 'error') {
+                        messageDiv.innerHTML = `<div class="message message-error">
+                            ❌ <strong>Update failed!</strong><br><br>
+                            Error: ${data.error}<br><br>
+                            You can update manually by running this command on your Jetson:<br>
                             <code style="background: #000; padding: 5px; display: block; margin-top: 10px; word-break: break-all;">
-                                ${data.command}
+                                ${data.fallback_command || 'curl -fsSL https://raw.githubusercontent.com/espressojuice/dealereye/main/install.sh | bash'}
                             </code>
                         </div>`;
-                    } else {
-                        messageDiv.innerHTML = '<div class="message message-success">✅ Update complete! Refreshing in 5 seconds...</div>';
-                        setTimeout(() => location.reload(), 5000);
+                        updateBtn.disabled = false;
                     }
                 } catch (err) {
-                    messageDiv.innerHTML = '<div class="message message-error">Error applying update</div>';
+                    messageDiv.innerHTML = '<div class="message message-error">❌ Error starting update: ' + err.message + '</div>';
                     updateBtn.disabled = false;
                 }
             }
@@ -1135,32 +1176,62 @@ def check_update():
 
 @app.route("/update/apply", methods=["POST"])
 def apply_update():
-    """Trigger system update"""
+    """Trigger automatic system update and restart"""
     try:
-        # Write update trigger file that host script can detect
-        trigger_file = "/app/config/.update_trigger"
+        print("[Update] Update requested by user")
 
-        try:
-            with open(trigger_file, 'w') as f:
-                f.write(f"update_requested_at={datetime.now().isoformat()}\n")
+        # Run update in background thread so we can return response before restart
+        def run_update():
+            import time
+            time.sleep(2)  # Give time for HTTP response to be sent
 
-            return jsonify({
-                "message": "Update triggered! System will restart in a few seconds...",
-                "status": "triggered"
-            })
-        except Exception as ex:
-            # If we can't write trigger file, return manual instructions
-            return jsonify({
-                "message": "Please run the following command on your Jetson to update:",
-                "command": "curl -fsSL https://raw.githubusercontent.com/espressojuice/dealereye/main/install.sh | bash",
-                "status": "manual",
-                "error": str(ex)
-            })
+            try:
+                print("[Update] Starting automatic update process...")
+                print("[Update] This will pull latest code, rebuild Docker image, and restart container")
+
+                # Execute the update script which will:
+                # 1. Pull latest code from GitHub to /opt/dealereye
+                # 2. Rebuild docker image with latest code
+                # 3. Stop old container and start new one
+                result = subprocess.run(
+                    ['/usr/bin/bash', '/app/update.sh'],
+                    capture_output=True,
+                    text=True,
+                    timeout=300  # 5 minute timeout
+                )
+
+                if result.returncode == 0:
+                    print("[Update] Update completed successfully")
+                    print(result.stdout)
+                else:
+                    print(f"[Update] Update failed with code {result.returncode}")
+                    print(f"[Update] stdout: {result.stdout}")
+                    print(f"[Update] stderr: {result.stderr}")
+
+            except subprocess.TimeoutExpired:
+                print("[Update] Update timed out after 5 minutes")
+            except Exception as e:
+                print(f"[Update] Update error: {e}")
+                import traceback
+                traceback.print_exc()
+
+        # Start update in background
+        import threading
+        update_thread = threading.Thread(target=run_update, daemon=True)
+        update_thread.start()
+
+        return jsonify({
+            "message": "Update started! System will automatically pull latest code, rebuild, and restart in about 2-3 minutes.",
+            "status": "updating",
+            "note": "Dashboard will be temporarily unavailable during rebuild. Refresh page in 3 minutes."
+        })
 
     except Exception as e:
+        print(f"[Update] Error starting update: {e}")
         return jsonify({
             "error": str(e),
-            "status": "error"
+            "status": "error",
+            "fallback_command": "curl -fsSL https://raw.githubusercontent.com/espressojuice/dealereye/main/install.sh | bash"
         }), 500
 
 if __name__ == "__main__":
