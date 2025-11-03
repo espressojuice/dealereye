@@ -18,7 +18,8 @@ RUN chmod +x /app/update.sh
 # Pin ultralytics to version that works on Jetson ARM (newer versions have polars dependency issues)
 # Install opencv-python-headless FIRST to prevent ultralytics from installing opencv-python
 # (headless version avoids GUI library conflicts with NVIDIA drivers)
-RUN pip3 install --no-cache-dir opencv-python-headless && \
+# Pin to version compatible with Ubuntu 20.04 (libffi.so.7)
+RUN pip3 install --no-cache-dir 'opencv-python-headless<4.6.0' && \
     pip3 install --no-cache-dir \
     boto3 \
     flask \
