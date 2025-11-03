@@ -71,40 +71,43 @@ if [ ! -z "${INFERENCE_WIDTH:-}" ]; then
   PERF_ENV="${PERF_ENV} -e INFERENCE_WIDTH=${INFERENCE_WIDTH}"
 fi
 
-# Build device mount arguments (only if devices exist)
-DEVICE_MOUNTS=""
-for dev in nvhost-ctrl nvhost-ctrl-gpu nvhost-prof-gpu nvmap nvhost-gpu nvhost-as-gpu; do
+# Build Docker run command with optional GPU device mounts
+DOCKER_CMD="sudo docker run -d \
+  --restart unless-stopped \
+  --runtime nvidia \
+  --gpus all"
+
+# Add Jetson GPU devices if they exist
+for dev in nvhost-ctrl-gpu nvhost-prof-gpu nvmap nvhost-gpu nvhost-as-gpu; do
   if [ -e "/dev/$dev" ]; then
-    DEVICE_MOUNTS="${DEVICE_MOUNTS} --device /dev/$dev"
+    DOCKER_CMD="$DOCKER_CMD --device /dev/$dev"
   fi
 done
 
-# Build library mount arguments (only if paths exist)
-LIB_MOUNTS=""
+# Add Tegra library mounts if they exist
 if [ -d "/usr/lib/aarch64-linux-gnu/tegra" ]; then
-  LIB_MOUNTS="${LIB_MOUNTS} -v /usr/lib/aarch64-linux-gnu/tegra:/usr/lib/aarch64-linux-gnu/tegra:ro"
+  DOCKER_CMD="$DOCKER_CMD -v /usr/lib/aarch64-linux-gnu/tegra:/usr/lib/aarch64-linux-gnu/tegra:ro"
 fi
 if [ -d "/usr/lib/aarch64-linux-gnu/tegra-egl" ]; then
-  LIB_MOUNTS="${LIB_MOUNTS} -v /usr/lib/aarch64-linux-gnu/tegra-egl:/usr/lib/aarch64-linux-gnu/tegra-egl:ro"
+  DOCKER_CMD="$DOCKER_CMD -v /usr/lib/aarch64-linux-gnu/tegra-egl:/usr/lib/aarch64-linux-gnu/tegra-egl:ro"
 fi
 
-sudo docker run -d \
-  --restart unless-stopped \
-  --runtime nvidia \
-  --gpus all \
-  ${DEVICE_MOUNTS} \
-  ${LIB_MOUNTS} \
+# Add remaining arguments
+DOCKER_CMD="$DOCKER_CMD \
   -p ${PORT}:8080 \
-  --name "$CONTAINER_NAME" \
+  --name $CONTAINER_NAME \
   -v ~/.aws:/root/.aws \
-  -v "${INSTALL_DIR}/config:/app/config" \
+  -v ${INSTALL_DIR}/config:/app/config \
   -v /usr/bin/docker:/usr/bin/docker \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /usr/bin/curl:/usr/bin/curl \
   -v /usr/bin/bash:/usr/bin/bash \
   ${TENSORRT_MOUNT} \
   ${PERF_ENV} \
-  "$APP_NAME"
+  $APP_NAME"
+
+# Execute the command
+eval $DOCKER_CMD
 
 # 5️⃣ TensorRT Optimization (if not already done)
 if [ ! -f "${INSTALL_DIR}/yolov8n.engine" ]; then
