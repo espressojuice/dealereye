@@ -64,10 +64,10 @@ fi
 # DETECTION_INTERVAL: Run AI detection every N frames (default: 5, higher=faster but fewer detections)
 # INFERENCE_WIDTH: Resize frames for AI to this width (default: 0=full res, 640 recommended for 2-3x speedup)
 PERF_ENV=""
-if [ ! -z "${DETECTION_INTERVAL}" ]; then
+if [ ! -z "${DETECTION_INTERVAL:-}" ]; then
   PERF_ENV="${PERF_ENV} -e DETECTION_INTERVAL=${DETECTION_INTERVAL}"
 fi
-if [ ! -z "${INFERENCE_WIDTH}" ]; then
+if [ ! -z "${INFERENCE_WIDTH:-}" ]; then
   PERF_ENV="${PERF_ENV} -e INFERENCE_WIDTH=${INFERENCE_WIDTH}"
 fi
 
