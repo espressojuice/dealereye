@@ -876,7 +876,13 @@ def dashboard():
             }
 
             async function applyUpdate() {
-                if (!confirm('This will automatically update the system by:\n\n1. Pulling latest code from GitHub\n2. Rebuilding the Docker image\n3. Restarting the container\n\nThe dashboard will be unavailable for 2-3 minutes. Continue?')) {
+                if (!confirm(`This will automatically update the system by:
+
+1. Pulling latest code from GitHub
+2. Rebuilding the Docker image
+3. Restarting the container
+
+The dashboard will be unavailable for 2-3 minutes. Continue?`)) {
                     return;
                 }
 
