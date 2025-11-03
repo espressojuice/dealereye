@@ -28,7 +28,8 @@ RUN apt-get update && \
     'ultralytics<8.3' \
     numpy \
     psutil && \
-    pip3 uninstall -y opencv-python opencv-python-headless opencv-contrib-python opencv-contrib-python-headless || true
+    rm -rf /usr/local/lib/python3.8/dist-packages/cv2 && \
+    rm -rf /usr/local/lib/python3.8/dist-packages/opencv_*
 
 # Create config directory for persistent camera settings
 RUN mkdir -p /app/config
