@@ -15,12 +15,13 @@ COPY . /app
 RUN chmod +x /app/update.sh
 
 # Install Python packages (PyTorch already included in base image with CUDA support)
+# Pin ultralytics to version that works on Jetson ARM (newer versions have polars dependency issues)
 RUN pip3 install --no-cache-dir \
     boto3 \
     flask \
     requests \
     pillow \
-    ultralytics \
+    'ultralytics<8.3' \
     opencv-python \
     numpy \
     psutil
