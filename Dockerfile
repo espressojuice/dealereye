@@ -4,8 +4,19 @@ FROM nvcr.io/nvidia/l4t-pytorch:r35.2.1-pth2.0-py3
 
 # Install additional dependencies
 RUN apt-get update && \
-    apt-get install -y ffmpeg git curl && \
+    apt-get install -y ffmpeg git curl wget build-essential && \
     rm -rf /var/lib/apt/lists/*
+
+# Build libffi 3.4.2 from source to provide libffi.so.8 (required by newer opencv-python)
+RUN cd /tmp && \
+    wget https://github.com/libffi/libffi/releases/download/v3.4.2/libffi-3.4.2.tar.gz && \
+    tar -xzf libffi-3.4.2.tar.gz && \
+    cd libffi-3.4.2 && \
+    ./configure --prefix=/usr && \
+    make -j$(nproc) && \
+    make install && \
+    cd / && \
+    rm -rf /tmp/libffi-3.4.2*
 
 # Copy app files
 WORKDIR /app
@@ -16,24 +27,14 @@ RUN chmod +x /app/update.sh
 
 # Install Python packages (PyTorch already included in base image with CUDA support)
 # Pin ultralytics to version that works on Jetson ARM (newer versions have polars dependency issues)
-# Use system OpenCV to avoid libffi.so.8 dependency issues with pip packages
-RUN apt-get update && \
-    apt-get install -y python3-opencv && \
-    rm -rf /var/lib/apt/lists/* && \
-    pip3 install --no-cache-dir \
+RUN pip3 install --no-cache-dir \
     boto3 \
     flask \
     requests \
     pillow \
+    'ultralytics<8.3' \
     numpy \
-    psutil \
-    matplotlib \
-    pyyaml \
-    scipy \
-    tqdm \
-    pandas \
-    seaborn && \
-    pip3 install --no-cache-dir --no-deps 'ultralytics<8.3'
+    psutil
 
 # Create config directory for persistent camera settings
 RUN mkdir -p /app/config
