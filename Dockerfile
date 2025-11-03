@@ -16,10 +16,10 @@ RUN chmod +x /app/update.sh
 
 # Install Python packages (PyTorch already included in base image with CUDA support)
 # Pin ultralytics to version that works on Jetson ARM (newer versions have polars dependency issues)
-# Install opencv-python-headless FIRST to prevent ultralytics from installing opencv-python
-# (headless version avoids GUI library conflicts with NVIDIA drivers)
-# Pin to version compatible with Ubuntu 20.04 (libffi.so.7)
-RUN pip3 install --no-cache-dir 'opencv-python-headless<4.6.0' && \
+# Build OpenCV from source to avoid libffi.so.8 dependency issues with pip packages
+RUN apt-get update && \
+    apt-get install -y python3-opencv && \
+    rm -rf /var/lib/apt/lists/* && \
     pip3 install --no-cache-dir \
     boto3 \
     flask \
