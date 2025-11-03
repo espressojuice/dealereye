@@ -2,7 +2,7 @@
 # Use NVIDIA L4T (Linux for Tegra) base image for best Jetson performance
 # R36 = JetPack 6.x (for Orin with driver 540.x and CUDA 12.x)
 # l4t-ml includes PyTorch, TensorFlow, and other ML frameworks
-FROM nvcr.io/nvidia/l4t-ml:r36.3.0-py3
+FROM nvcr.io/nvidia/l4t-ml:r36.2.0-py3
 
 # Install additional dependencies
 RUN apt-get update && \
