@@ -27,7 +27,9 @@ RUN chmod +x /app/update.sh
 
 # Install Python packages (PyTorch already included in base image with CUDA support)
 # Pin ultralytics to version that works on Jetson ARM (newer versions have polars dependency issues)
+# Pin opencv-python to version stable on Jetson ARM with Python 3.8
 RUN pip3 install --no-cache-dir \
+    'opencv-python-headless==4.5.5.64' \
     boto3 \
     flask \
     requests \
