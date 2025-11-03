@@ -1,6 +1,7 @@
 # Base image optimized for NVIDIA Jetson with GPU support
 # Use NVIDIA L4T (Linux for Tegra) base image for best Jetson performance
-FROM nvcr.io/nvidia/l4t-pytorch:r35.2.1-pth2.0-py3
+# R36 = JetPack 6.x (for Orin with driver 540.x and CUDA 12.x)
+FROM nvcr.io/nvidia/l4t-pytorch:r36.2.0-pth2.1-py3
 
 # Install additional dependencies
 RUN apt-get update && \
@@ -26,7 +27,7 @@ COPY . /app
 RUN chmod +x /app/update.sh
 
 # Install Python packages (PyTorch already included in base image with CUDA support)
-# Upgrade numpy first (base image has 1.17.4, ultralytics needs >=1.23.0)
+# Upgrade numpy first to meet ultralytics requirements (>=1.23.0)
 # Pin ultralytics to version that works on Jetson ARM (newer versions have polars dependency issues)
 # Install opencv and remove problematic modules that cause circular imports on Jetson
 RUN pip3 install --no-cache-dir --upgrade 'numpy>=1.23.0,<2.0.0' && \
@@ -38,8 +39,7 @@ RUN pip3 install --no-cache-dir --upgrade 'numpy>=1.23.0,<2.0.0' && \
     pillow \
     'ultralytics<8.3' \
     psutil && \
-    rm -rf /usr/local/lib/python3.8/dist-packages/cv2/gapi && \
-    rm -rf /usr/local/lib/python3.8/dist-packages/cv2/mat_wrapper
+    find /usr/local/lib -name cv2 -type d -exec rm -rf {}/gapi {}/mat_wrapper \; 2>/dev/null || true
 
 # Create config directory for persistent camera settings
 RUN mkdir -p /app/config
