@@ -4,9 +4,8 @@ FROM nvcr.io/nvidia/l4t-pytorch:r35.2.1-pth2.0-py3
 
 # Install additional dependencies
 RUN apt-get update && \
-    apt-get install -y ffmpeg git curl libffi-dev && \
-    rm -rf /var/lib/apt/lists/* && \
-    ln -s /usr/lib/aarch64-linux-gnu/libffi.so.7 /usr/lib/aarch64-linux-gnu/libffi.so.8
+    apt-get install -y ffmpeg git curl && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy app files
 WORKDIR /app
@@ -17,8 +16,10 @@ RUN chmod +x /app/update.sh
 
 # Install Python packages (PyTorch already included in base image with CUDA support)
 # Pin ultralytics to version that works on Jetson ARM (newer versions have polars dependency issues)
-# Note: ultralytics will auto-install opencv-python as dependency (needs libffi.so.8 symlink)
-RUN pip3 install --no-cache-dir \
+# Install opencv-python-headless FIRST to prevent ultralytics from installing opencv-python
+# (headless version avoids GUI library conflicts with NVIDIA drivers)
+RUN pip3 install --no-cache-dir opencv-python-headless && \
+    pip3 install --no-cache-dir \
     boto3 \
     flask \
     requests \
