@@ -1651,6 +1651,14 @@ docker run -d \\
   --restart unless-stopped \\
   --runtime nvidia \\
   --gpus all \\
+  --device /dev/nvhost-ctrl \\
+  --device /dev/nvhost-ctrl-gpu \\
+  --device /dev/nvhost-prof-gpu \\
+  --device /dev/nvmap \\
+  --device /dev/nvhost-gpu \\
+  --device /dev/nvhost-as-gpu \\
+  -v /usr/lib/aarch64-linux-gnu/tegra:/usr/lib/aarch64-linux-gnu/tegra:ro \\
+  -v /usr/lib/aarch64-linux-gnu/tegra-egl:/usr/lib/aarch64-linux-gnu/tegra-egl:ro \\
   -p 8080:8080 \\
   --name ${APP_NAME} \\
   -v ~/.aws:/root/.aws \\
