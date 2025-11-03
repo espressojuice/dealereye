@@ -4,7 +4,7 @@ FROM nvcr.io/nvidia/l4t-pytorch:r35.2.1-pth2.0-py3
 
 # Install additional dependencies
 RUN apt-get update && \
-    apt-get install -y ffmpeg git curl && \
+    apt-get install -y ffmpeg git curl libffi8 && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy app files
