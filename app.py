@@ -100,16 +100,17 @@ def dashboard():
 
             .sidebar {
                 position: fixed;
-                left: -320px;
+                left: -280px;
                 top: 0;
-                width: 320px;
+                width: 280px;
                 height: 100%;
                 background: #2a2a2a;
                 box-shadow: 2px 0 10px rgba(0,0,0,0.5);
                 transition: left 0.3s ease;
                 z-index: 1000;
                 overflow-y: auto;
-                padding: 80px 20px 20px 20px;
+                padding: 70px 15px 20px 15px;
+                box-sizing: border-box;
             }
             .sidebar.open {
                 left: 0;
