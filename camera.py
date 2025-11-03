@@ -14,7 +14,7 @@ import json
 
 class CameraStream:
     def __init__(self, camera_id, stream_url, detector=None,
-                 detection_interval=None, inference_resolution=None):
+                 detection_interval=None, inference_resolution=None, thresholds=None):
         """
         Initialize a camera stream
 
@@ -24,6 +24,7 @@ class CameraStream:
             detector: Detector instance for running inference
             detection_interval: Run detection every N frames (default: 5, higher=faster but less detections)
             inference_resolution: Resize frames for inference (default: None=full res, 640 recommended for speed)
+            thresholds: Per-camera detection thresholds dict (e.g., {"person": 50, "laptop": 20})
         """
         self.camera_id = camera_id
         self.stream_url = stream_url
@@ -32,6 +33,17 @@ class CameraStream:
         # Performance tuning (can be set via environment variables or API)
         self.detection_interval = detection_interval or int(os.getenv('DETECTION_INTERVAL', '5'))
         self.inference_resolution = inference_resolution or (int(os.getenv('INFERENCE_WIDTH', '0')) or None)
+
+        # Per-camera AI detection thresholds (percentages)
+        # Default to global defaults if not specified
+        self.thresholds = thresholds or {
+            "person": 50,
+            "laptop": 20,
+            "car": 25,
+            "motorcycle": 25,
+            "bus": 25,
+            "truck": 25
+        }
 
         self.cap = None
         self.running = False
@@ -66,6 +78,7 @@ class CameraStream:
         }
 
         print(f"[{self.camera_id}] Performance settings: detection_interval={self.detection_interval}, inference_resolution={self.inference_resolution}")
+        print(f"[{self.camera_id}] Detection thresholds: {self.thresholds}")
 
     def connect(self):
         """Connect to camera stream with optimized settings"""
@@ -175,9 +188,9 @@ class CameraStream:
                             new_h = int(h * scale)
                             inference_frame = cv2.resize(frame, (new_w, new_h))
 
-                    # Run detection
+                    # Run detection with per-camera thresholds
                     start_inference = time.time()
-                    detections = self.detector.detect(inference_frame)
+                    detections = self.detector.detect(inference_frame, custom_thresholds=self.thresholds)
                     inference_time = (time.time() - start_inference) * 1000  # ms
 
                     # Track inference performance
@@ -457,7 +470,10 @@ class CameraManager:
                 "cameras": [
                     {
                         "camera_id": cam_id,
-                        "stream_url": cam.stream_url
+                        "stream_url": cam.stream_url,
+                        "thresholds": cam.thresholds,
+                        "detection_interval": cam.detection_interval,
+                        "inference_resolution": cam.inference_resolution
                     }
                     for cam_id, cam in self.cameras.items()
                 ]
@@ -503,6 +519,9 @@ class CameraManager:
             for cam_config in cameras:
                 camera_id = cam_config.get("camera_id")
                 stream_url = cam_config.get("stream_url")
+                thresholds = cam_config.get("thresholds")
+                detection_interval = cam_config.get("detection_interval")
+                inference_resolution = cam_config.get("inference_resolution")
 
                 # Validate config entry
                 if not camera_id or not stream_url:
@@ -511,8 +530,15 @@ class CameraManager:
                     continue
 
                 try:
-                    # Add camera (don't auto-start yet)
-                    camera = CameraStream(camera_id, stream_url, self.detector)
+                    # Add camera (don't auto-start yet) with saved settings
+                    camera = CameraStream(
+                        camera_id,
+                        stream_url,
+                        self.detector,
+                        detection_interval=detection_interval,
+                        inference_resolution=inference_resolution,
+                        thresholds=thresholds
+                    )
                     self.cameras[camera_id] = camera
                     print(f"[CameraManager] Loaded camera: {camera_id}")
 

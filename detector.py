@@ -67,12 +67,14 @@ class Detector:
             threshold = self.class_thresholds.get(cls_id, self.conf_threshold)
             print(f"   - {cls_name}: {int(threshold * 100)}%")
 
-    def detect(self, frame):
+    def detect(self, frame, custom_thresholds=None):
         """
         Run detection on a single frame
 
         Args:
             frame: OpenCV image (numpy array)
+            custom_thresholds: Optional dict of class name to threshold percentage (e.g., {"person": 50})
+                              If provided, overrides global class_thresholds for this detection
 
         Returns:
             dict with detections: {
@@ -85,8 +87,20 @@ class Detector:
         # Track inference time
         start_time = time.time()
 
-        # Use lowest threshold from class_thresholds, or default
-        min_threshold = min(self.class_thresholds.values()) if self.class_thresholds else self.conf_threshold
+        # Convert custom thresholds from percentages to 0-1 range if provided
+        name_to_id = {
+            "person": 0, "car": 2, "motorcycle": 3,
+            "bus": 5, "truck": 7, "laptop": 63
+        }
+
+        active_thresholds = self.class_thresholds.copy()
+        if custom_thresholds:
+            for name, pct in custom_thresholds.items():
+                if name in name_to_id:
+                    active_thresholds[name_to_id[name]] = pct / 100.0
+
+        # Use lowest threshold from active_thresholds, or default
+        min_threshold = min(active_thresholds.values()) if active_thresholds else self.conf_threshold
         results = self.model(frame, conf=min_threshold, verbose=False)
 
         inference_time = (time.time() - start_time) * 1000  # Convert to ms
@@ -106,8 +120,8 @@ class Detector:
                 if cls_id in self.target_classes:
                     confidence = float(box.conf[0])
 
-                    # Check per-class threshold
-                    required_confidence = self.class_thresholds.get(cls_id, self.conf_threshold)
+                    # Check per-class threshold (use custom if provided, otherwise global)
+                    required_confidence = active_thresholds.get(cls_id, self.conf_threshold)
                     if confidence < required_confidence:
                         continue  # Skip this detection
 
