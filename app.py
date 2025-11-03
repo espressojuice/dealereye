@@ -1052,19 +1052,28 @@ def check_update():
         github_commit = response.json()['sha'][:7]  # Short hash
 
         # Get local commit hash
-        try:
-            result = subprocess.run(
-                ['git', 'rev-parse', '--short', 'HEAD'],
-                cwd='/opt/dealereye',
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            local_commit = result.stdout.strip() if result.returncode == 0 else "unknown"
-        except:
-            local_commit = "unknown"
+        # Try /app first (container path), fall back to /opt/dealereye (host path)
+        local_commit = "unknown"
+        for git_dir in ['/app', '/opt/dealereye']:
+            try:
+                result = subprocess.run(
+                    ['git', 'rev-parse', '--short', 'HEAD'],
+                    cwd=git_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    local_commit = result.stdout.strip()
+                    print(f"[Update] Local commit from {git_dir}: {local_commit}")
+                    break
+            except Exception as e:
+                print(f"[Update] Failed to get git hash from {git_dir}: {e}")
+                continue
 
         update_available = github_commit != local_commit and local_commit != "unknown"
+
+        print(f"[Update] GitHub: {github_commit}, Local: {local_commit}, Update available: {update_available}")
 
         return jsonify({
             "update_available": update_available,
