@@ -30,7 +30,6 @@ RUN chmod +x /app/update.sh
 # Install Python packages (PyTorch already included in base image with CUDA support)
 # Upgrade numpy first to meet ultralytics requirements (>=1.23.0)
 # Pin ultralytics to version that works on Jetson ARM (newer versions have polars dependency issues)
-# Install opencv and remove problematic modules that cause circular imports on Jetson
 RUN pip3 install --no-cache-dir --upgrade 'numpy>=1.23.0,<2.0.0' && \
     pip3 install --no-cache-dir \
     'opencv-python-headless==4.5.1.48' \
@@ -39,8 +38,10 @@ RUN pip3 install --no-cache-dir --upgrade 'numpy>=1.23.0,<2.0.0' && \
     requests \
     pillow \
     'ultralytics<8.3' \
-    psutil && \
-    find /usr/local/lib -name cv2 -type d -exec rm -rf {}/gapi {}/mat_wrapper \; 2>/dev/null || true
+    psutil
+
+# Remove problematic opencv modules that cause circular imports on Jetson
+RUN find /usr/local/lib -name cv2 -type d -exec rm -rf {}/gapi {}/mat_wrapper \; 2>/dev/null || true
 
 # Create config directory for persistent camera settings
 RUN mkdir -p /app/config
