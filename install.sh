@@ -60,13 +60,27 @@ if [ -f "${INSTALL_DIR}/yolov8n.engine" ]; then
   echo "Found existing TensorRT engine, mounting it..."
 fi
 
+# Performance tuning via environment variables (optional)
+# DETECTION_INTERVAL: Run AI detection every N frames (default: 5, higher=faster but fewer detections)
+# INFERENCE_WIDTH: Resize frames for AI to this width (default: 0=full res, 640 recommended for 2-3x speedup)
+PERF_ENV=""
+if [ ! -z "${DETECTION_INTERVAL}" ]; then
+  PERF_ENV="${PERF_ENV} -e DETECTION_INTERVAL=${DETECTION_INTERVAL}"
+fi
+if [ ! -z "${INFERENCE_WIDTH}" ]; then
+  PERF_ENV="${PERF_ENV} -e INFERENCE_WIDTH=${INFERENCE_WIDTH}"
+fi
+
 sudo docker run -d \
   --restart unless-stopped \
+  --runtime nvidia \
+  --gpus all \
   -p ${PORT}:8080 \
   --name "$CONTAINER_NAME" \
   -v ~/.aws:/root/.aws \
   -v "${INSTALL_DIR}/config:/app/config" \
   ${TENSORRT_MOUNT} \
+  ${PERF_ENV} \
   "$APP_NAME"
 
 # 5️⃣ TensorRT Optimization (if not already done)

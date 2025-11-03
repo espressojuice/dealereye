@@ -1033,6 +1033,51 @@ def debug_config():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/debug/performance", methods=["GET"])
+def debug_performance():
+    """Performance monitoring endpoint"""
+    try:
+        import torch
+        import psutil
+
+        perf_info = {
+            "gpu": {
+                "available": torch.cuda.is_available(),
+                "device_count": torch.cuda.device_count() if torch.cuda.is_available() else 0,
+                "current_device": torch.cuda.current_device() if torch.cuda.is_available() else None,
+                "device_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+            },
+            "model": {
+                "type": detector.model_type,
+                "path": detector.model_path,
+                "avg_inference_ms": round(sum(detector.inference_times) / len(detector.inference_times), 1) if detector.inference_times else 0,
+                "total_detections": detector.total_detections
+            },
+            "cameras": {},
+            "system": {
+                "cpu_percent": psutil.cpu_percent(interval=0.1),
+                "memory_percent": psutil.virtual_memory().percent,
+                "memory_available_mb": round(psutil.virtual_memory().available / 1024 / 1024)
+            }
+        }
+
+        # Add per-camera performance stats
+        for cam_id, cam in camera_manager.cameras.items():
+            perf_info["cameras"][cam_id] = {
+                "fps": round(cam.current_fps, 1),
+                "avg_inference_ms": cam.stats.get('avg_inference_ms', 0),
+                "frames_processed": cam.stats['frames_processed'],
+                "detections": cam.stats['detections'],
+                "detection_interval": cam.detection_interval,
+                "inference_resolution": cam.inference_resolution,
+                "status": cam.stats['status']
+            }
+
+        return jsonify(perf_info)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # === Update System Endpoints ===
 
 @app.route("/update/check", methods=["GET"])

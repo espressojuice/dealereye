@@ -1,16 +1,17 @@
-# Base image with Python and Jetson libraries
-FROM ubuntu:22.04
+# Base image optimized for NVIDIA Jetson with GPU support
+# Use NVIDIA L4T (Linux for Tegra) base image for best Jetson performance
+FROM nvcr.io/nvidia/l4t-pytorch:r35.2.1-pth2.0-py3
 
-# Install dependencies
+# Install additional dependencies
 RUN apt-get update && \
-    apt-get install -y python3 python3-pip ffmpeg git curl && \
+    apt-get install -y ffmpeg git curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy app files
 WORKDIR /app
 COPY . /app
 
-# Install Python packages
+# Install Python packages (PyTorch already included in base image with CUDA support)
 RUN pip3 install --no-cache-dir \
     boto3 \
     flask \
@@ -18,11 +19,8 @@ RUN pip3 install --no-cache-dir \
     pillow \
     ultralytics \
     opencv-python \
-    numpy
-
-# Install PyTorch from CPU-only index
-RUN pip3 install --no-cache-dir \
-    torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+    numpy \
+    psutil
 
 # Create config directory for persistent camera settings
 RUN mkdir -p /app/config

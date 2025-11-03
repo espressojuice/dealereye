@@ -29,13 +29,104 @@ curl -fsSL https://raw.githubusercontent.com/espressojuice/dealereye/main/instal
 The installer will:
 - Install Docker if needed
 - Clone/update the repository
-- Build and start the container
+- Build and start the container with **GPU acceleration**
+- Auto-optimize YOLOv8 with TensorRT (5-10x speedup)
 - Print the local access URL
 
 ### 2. Access the Dashboard
 
 ```
-http://<JETSON_IP>:8080/
+http://<JETSON_IP>:8080/dashboard
+```
+
+## ⚡ Performance Optimization
+
+Dealereye is optimized for NVIDIA Jetson with multiple performance tuning options:
+
+### GPU Acceleration (Enabled by Default)
+- Uses NVIDIA L4T base image with CUDA support
+- Runs with `--runtime nvidia --gpus all` flags
+- TensorRT optimization for 5-10x faster inference
+- All AI processing runs on Jetson GPU, not CPU
+
+### Performance Tuning Options
+
+**Option 1: Environment Variables (Recommended)**
+```bash
+# Faster processing, fewer detections (good for high FPS cameras)
+DETECTION_INTERVAL=10 INFERENCE_WIDTH=640 curl -fsSL https://raw.githubusercontent.com/espressojuice/dealereye/main/install.sh | bash
+
+# Balanced (default)
+curl -fsSL https://raw.githubusercontent.com/espressojuice/dealereye/main/install.sh | bash
+
+# Maximum accuracy, slower (good for critical areas)
+DETECTION_INTERVAL=1 curl -fsSL https://raw.githubusercontent.com/espressojuice/dealereye/main/install.sh | bash
+```
+
+**Available Settings:**
+- `DETECTION_INTERVAL`: Run AI every N frames (default: 5)
+  - Higher = faster processing, fewer detections
+  - Lower = more detections, slower processing
+  - Recommended: 5-10 for most use cases
+
+- `INFERENCE_WIDTH`: Resize frames for AI (default: full resolution)
+  - 640 = 2-3x speedup with minimal accuracy loss
+  - 0 = full resolution (slowest, most accurate)
+  - Recommended: 640 for 1080p+ cameras
+
+**Option 2: Monitor Performance**
+```bash
+# Check GPU usage, inference times, FPS
+curl http://<JETSON_IP>:8080/debug/performance | jq
+```
+
+Example output:
+```json
+{
+  "gpu": {
+    "available": true,
+    "device_name": "Orin NX",
+    "device_count": 1
+  },
+  "model": {
+    "type": "TensorRT",
+    "avg_inference_ms": 15.3
+  },
+  "cameras": {
+    "Backyard": {
+      "fps": 28.5,
+      "avg_inference_ms": 15.3,
+      "detection_interval": 5,
+      "inference_resolution": 640
+    }
+  }
+}
+```
+
+### Expected Performance
+
+**With GPU + TensorRT:**
+- YOLOv8n @ 640px: **15-25ms per inference** (40-65 FPS)
+- YOLOv8n @ 1080p: **40-60ms per inference** (16-25 FPS)
+- Multiple cameras: Process 3-5 streams simultaneously
+
+**Without GPU (CPU only):**
+- YOLOv8n @ 640px: ~200-300ms per inference (3-5 FPS)
+- ❌ **Not recommended for production use**
+
+### Camera Stream Optimization
+
+For best performance, use **substream** from your NVR/camera:
+- Main stream: 1080p @ 30fps → Heavy on network and processing
+- Sub stream: 720p @ 15fps → Much faster, still accurate
+
+Example with Digital Watchdog Spectrum:
+```bash
+# Main stream (slower)
+rtsp://admin:pass@192.168.1.2:7001/<camera_id>?stream=0
+
+# Sub stream (faster) ✅ Recommended
+rtsp://admin:pass@192.168.1.2:7001/<camera_id>?stream=1
 ```
 
 ## API Endpoints

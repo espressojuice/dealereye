@@ -13,7 +13,8 @@ import os
 import json
 
 class CameraStream:
-    def __init__(self, camera_id, stream_url, detector=None):
+    def __init__(self, camera_id, stream_url, detector=None,
+                 detection_interval=None, inference_resolution=None):
         """
         Initialize a camera stream
 
@@ -21,10 +22,16 @@ class CameraStream:
             camera_id: Unique identifier for this camera
             stream_url: RTSP URL (e.g., rtsp://192.168.1.100:554/stream)
             detector: Detector instance for running inference
+            detection_interval: Run detection every N frames (default: 5, higher=faster but less detections)
+            inference_resolution: Resize frames for inference (default: None=full res, 640 recommended for speed)
         """
         self.camera_id = camera_id
         self.stream_url = stream_url
         self.detector = detector
+
+        # Performance tuning (can be set via environment variables or API)
+        self.detection_interval = detection_interval or int(os.getenv('DETECTION_INTERVAL', '5'))
+        self.inference_resolution = inference_resolution or (int(os.getenv('INFERENCE_WIDTH', '0')) or None)
 
         self.cap = None
         self.running = False
@@ -46,29 +53,42 @@ class CameraStream:
         self.fps_frame_count = 0
         self.current_fps = 0
 
+        # Inference performance tracking
+        self.avg_inference_time = 0
+
         self.stats = {
             'frames_processed': 0,
             'detections': 0,
             'errors': 0,
             'clips_recorded': 0,
-            'status': 'stopped'
+            'status': 'stopped',
+            'avg_inference_ms': 0
         }
 
+        print(f"[{self.camera_id}] Performance settings: detection_interval={self.detection_interval}, inference_resolution={self.inference_resolution}")
+
     def connect(self):
-        """Connect to camera stream"""
+        """Connect to camera stream with optimized settings"""
         print(f"[{self.camera_id}] Connecting to {self.stream_url}")
 
-        self.cap = cv2.VideoCapture(self.stream_url)
+        # Use FFMPEG backend for better RTSP performance
+        self.cap = cv2.VideoCapture(self.stream_url, cv2.CAP_FFMPEG)
 
         if not self.cap.isOpened():
             print(f"[{self.camera_id}] Failed to connect")
             self.stats['status'] = 'error'
             return False
 
-        # Set buffer size to reduce latency
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        # Optimize for low latency and performance
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize latency
+        self.cap.set(cv2.CAP_PROP_FPS, 30)  # Request 30fps (camera may limit)
 
-        print(f"[{self.camera_id}] Connected successfully")
+        # Get actual stream properties
+        actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
+        width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        print(f"[{self.camera_id}] Connected: {width}x{height} @ {actual_fps}fps")
         self.stats['status'] = 'connected'
         return True
 
@@ -105,7 +125,6 @@ class CameraStream:
     def _process_stream(self):
         """Main loop for processing frames (runs in background thread)"""
         frame_skip = 0
-        detection_interval = 5  # Run detection every N frames
 
         while self.running:
             try:
@@ -144,9 +163,26 @@ class CameraStream:
                     if self.clip_frames_remaining <= 0:
                         self._finish_clip_recording()
 
-                # Run detection every N frames to reduce CPU load
-                if frame_skip % detection_interval == 0 and self.detector:
-                    detections = self.detector.detect(frame)
+                # Run detection every N frames to reduce GPU load
+                if frame_skip % self.detection_interval == 0 and self.detector:
+                    # Resize frame for inference if configured (big performance gain)
+                    inference_frame = frame
+                    if self.inference_resolution:
+                        h, w = frame.shape[:2]
+                        scale = self.inference_resolution / max(h, w)
+                        if scale < 1.0:  # Only downscale, never upscale
+                            new_w = int(w * scale)
+                            new_h = int(h * scale)
+                            inference_frame = cv2.resize(frame, (new_w, new_h))
+
+                    # Run detection
+                    start_inference = time.time()
+                    detections = self.detector.detect(inference_frame)
+                    inference_time = (time.time() - start_inference) * 1000  # ms
+
+                    # Track inference performance
+                    self.avg_inference_time = (self.avg_inference_time * 0.9) + (inference_time * 0.1)
+                    self.stats['avg_inference_ms'] = round(self.avg_inference_time, 1)
 
                     if detections['count'] > 0:
                         self.latest_detections = detections
@@ -154,7 +190,8 @@ class CameraStream:
                         self.stats['detections'] += 1
 
                         print(f"[{self.camera_id}] Detected {detections['count']} objects: "
-                              f"{', '.join([d['class'] for d in detections['detections']])}")
+                              f"{', '.join([d['class'] for d in detections['detections']])} "
+                              f"({inference_time:.1f}ms)")
 
                         # Auto-start clip recording on detection
                         if not self.recording_clip:
@@ -162,7 +199,7 @@ class CameraStream:
 
                 frame_skip += 1
 
-                # Small delay to prevent maxing out CPU
+                # Small delay to prevent maxing out GPU
                 time.sleep(0.01)
 
             except Exception as e:
