@@ -5,6 +5,7 @@ import io
 import cv2
 import subprocess
 import requests
+import json
 from detector import Detector
 from camera import CameraManager
 
