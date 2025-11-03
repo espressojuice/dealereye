@@ -16,7 +16,7 @@ RUN chmod +x /app/update.sh
 
 # Install Python packages (PyTorch already included in base image with CUDA support)
 # Pin ultralytics to version that works on Jetson ARM (newer versions have polars dependency issues)
-# Build OpenCV from source to avoid libffi.so.8 dependency issues with pip packages
+# Use system OpenCV to avoid libffi.so.8 dependency issues with pip packages
 RUN apt-get update && \
     apt-get install -y python3-opencv && \
     rm -rf /var/lib/apt/lists/* && \
@@ -27,7 +27,8 @@ RUN apt-get update && \
     pillow \
     'ultralytics<8.3' \
     numpy \
-    psutil
+    psutil && \
+    pip3 uninstall -y opencv-python opencv-python-headless opencv-contrib-python opencv-contrib-python-headless || true
 
 # Create config directory for persistent camera settings
 RUN mkdir -p /app/config
