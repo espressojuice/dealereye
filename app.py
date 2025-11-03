@@ -390,15 +390,22 @@ def dashboard():
                 }
 
                 try {
-                    const url = force ? `/cameras/${cameraId}?force=true` : `/cameras/${cameraId}`;
-                    const response = await fetch(url, {method: 'DELETE'});
+                    // Use POST endpoint with camera_id in body to avoid URL encoding issues
+                    const response = await fetch('/cameras/remove', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            camera_id: cameraId,
+                            force: force
+                        })
+                    });
 
                     if (response.ok) {
                         const result = await response.json();
                         alert(result.message || 'Camera removed successfully');
                         location.reload();
                     } else {
-                        const error = await response.json();
+                        const error = await response.json().catch(() => ({error: 'Failed to parse error response'}));
                         console.error('Remove camera error:', error);
 
                         // If force is available, offer it as an option
@@ -688,6 +695,13 @@ def add_camera():
     if not camera_id:
         return jsonify({"error": "camera_id cannot be empty"}), 400
 
+    # Prevent camera_id from being a URL (common mistake - swapping camera_id and stream_url)
+    if camera_id.startswith("rtsp://") or camera_id.startswith("http://") or camera_id.startswith("https://") or "://" in camera_id:
+        return jsonify({
+            "error": "camera_id cannot be a URL. Did you swap camera_id and stream_url?",
+            "hint": "camera_id should be a simple identifier like 'Backyard' or 'Front Door'"
+        }), 400
+
     # Validate stream_url
     if not stream_url:
         return jsonify({"error": "stream_url cannot be empty"}), 400
@@ -726,9 +740,33 @@ def stop_camera(camera_id):
 
 @app.route("/cameras/<camera_id>", methods=["DELETE"])
 def remove_camera(camera_id):
-    """Remove a camera"""
+    """Remove a camera (URL path method)"""
     # Check if force parameter is set
     force = request.args.get('force', 'false').lower() == 'true'
+
+    success, message = camera_manager.remove_camera(camera_id, force=force)
+
+    if success:
+        return jsonify({"message": message})
+    else:
+        return jsonify({
+            "error": message,
+            "camera_id": camera_id,
+            "force_available": not force  # Suggest force option if not already used
+        }), 404
+
+@app.route("/cameras/remove", methods=["POST"])
+def remove_camera_post():
+    """Remove a camera (POST body method - handles special characters better)"""
+    data = request.get_json()
+
+    if not data or "camera_id" not in data:
+        return jsonify({"error": "camera_id required in request body"}), 400
+
+    camera_id = data["camera_id"]
+    force = data.get("force", False)
+
+    print(f"[API] Remove camera request: camera_id={camera_id}, force={force}")
 
     success, message = camera_manager.remove_camera(camera_id, force=force)
 
