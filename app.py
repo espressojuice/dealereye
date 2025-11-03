@@ -374,13 +374,6 @@ def dashboard():
                 </div>
             </div>
 
-            <h2>🎯 AI Settings</h2>
-            <div class="menu-section">
-                <div class="menu-item" onclick="openModal('global-thresholds-modal')">
-                    🎚️ Global Thresholds
-                </div>
-            </div>
-
             <h2>⚙️ System</h2>
             <div class="menu-section">
                 <div class="menu-item" onclick="openModal('updates-modal')">
@@ -462,10 +455,19 @@ def dashboard():
             <button class="modal-close" onclick="closeModal()">&times;</button>
             <h2>🔄 System Updates</h2>
             <div id="update-message"></div>
-            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 20px;">
                 <button class="btn" onclick="checkForUpdates()">Check for Updates</button>
-                <button class="btn btn-warning" id="update-btn" onclick="applyUpdate()" style="display: none;">Update Now</button>
                 <span id="version-info" style="color: #888; font-size: 14px;"></span>
+            </div>
+            <div id="update-instructions" style="background: #1a1a1a; padding: 15px; border-radius: 4px; display: none;">
+                <h3 style="margin-top: 0; color: #4CAF50;">📋 Update Instructions</h3>
+                <p style="color: #ccc; margin-bottom: 15px;">To update the system, run this command on your Jetson:</p>
+                <code style="display: block; background: #000; padding: 10px; border-radius: 4px; color: #4CAF50; word-break: break-all; margin-bottom: 10px;">
+                    curl -fsSL https://raw.githubusercontent.com/espressojuice/dealereye/main/install.sh | bash
+                </code>
+                <p style="color: #888; font-size: 14px; margin: 0;">
+                    The update will take 2-3 minutes. The dashboard will automatically refresh when complete.
+                </p>
             </div>
         </div>
 
@@ -858,13 +860,13 @@ def dashboard():
                     console.log('Update check data:', data);
 
                     if (data.update_available) {
-                        messageDiv.innerHTML = '<div class="message message-success">✨ Update available! Click "Update Now" to install.</div>';
+                        messageDiv.innerHTML = '<div class="message message-success">✨ Update available!</div>';
                         versionInfo.textContent = `Current: ${data.local_version} → Latest: ${data.latest_version}`;
-                        updateBtn.style.display = 'inline-block';
+                        document.getElementById('update-instructions').style.display = 'block';
                     } else {
                         messageDiv.innerHTML = '<div class="message" style="background: #4CAF50;">✅ You are running the latest version!</div>';
                         versionInfo.textContent = `Version: ${data.local_version}`;
-                        updateBtn.style.display = 'none';
+                        document.getElementById('update-instructions').style.display = 'none';
                         // Keep the "up to date" message visible
                         setTimeout(() => {
                             messageDiv.innerHTML = '';
@@ -873,85 +875,6 @@ def dashboard():
                 } catch (err) {
                     console.error('Update check error:', err);
                     messageDiv.innerHTML = '<div class="message message-error">❌ Error: ' + err.message + '</div>';
-                }
-            }
-
-            async function applyUpdate() {
-                if (!confirm(`This will automatically update the system by:
-
-1. Pulling latest code from GitHub
-2. Rebuilding the Docker image
-3. Restarting the container
-
-The dashboard will be unavailable for 2-3 minutes. Continue?`)) {
-                    return;
-                }
-
-                const messageDiv = document.getElementById('update-message');
-                const updateBtn = document.getElementById('update-btn');
-
-                messageDiv.innerHTML = '<div class="message" style="background: #ff9800;">🔄 Starting automatic update...</div>';
-                updateBtn.disabled = true;
-
-                try {
-                    const response = await fetch('/update/apply', {method: 'POST'});
-                    const data = await response.json();
-
-                    if (data.status === 'updating') {
-                        // Show update in progress message with countdown
-                        messageDiv.innerHTML = `<div class="message" style="background: #ff9800;">
-                            🔄 <strong>Update in progress!</strong><br><br>
-                            The system is now:<br>
-                            1. ✅ Pulling latest code from GitHub<br>
-                            2. ⏳ Rebuilding Docker image (this takes 2-3 minutes)<br>
-                            3. ⏳ Restarting container<br><br>
-                            <div id="countdown" style="font-size: 1.2em; margin-top: 10px;">Checking if ready in <span id="seconds">180</span> seconds...</div>
-                        </div>`;
-
-                        // Start countdown and auto-refresh check
-                        let seconds = 180;
-                        const countdownInterval = setInterval(() => {
-                            seconds--;
-                            const secsElement = document.getElementById('seconds');
-                            if (secsElement) {
-                                secsElement.textContent = seconds;
-                            }
-
-                            if (seconds <= 0) {
-                                clearInterval(countdownInterval);
-                                location.reload();
-                            }
-                        }, 1000);
-
-                        // Also try to ping the server every 10 seconds to see if it's back
-                        const checkInterval = setInterval(async () => {
-                            try {
-                                const pingResponse = await fetch('/');
-                                if (pingResponse.ok) {
-                                    clearInterval(checkInterval);
-                                    clearInterval(countdownInterval);
-                                    messageDiv.innerHTML = '<div class="message message-success">✅ Update complete! Reloading dashboard...</div>';
-                                    setTimeout(() => location.reload(), 2000);
-                                }
-                            } catch (e) {
-                                // Server not ready yet, keep waiting
-                            }
-                        }, 10000);
-
-                    } else if (data.status === 'error') {
-                        messageDiv.innerHTML = `<div class="message message-error">
-                            ❌ <strong>Update failed!</strong><br><br>
-                            Error: ${data.error}<br><br>
-                            You can update manually by running this command on your Jetson:<br>
-                            <code style="background: #000; padding: 5px; display: block; margin-top: 10px; word-break: break-all;">
-                                ${data.fallback_command || 'curl -fsSL https://raw.githubusercontent.com/espressojuice/dealereye/main/install.sh | bash'}
-                            </code>
-                        </div>`;
-                        updateBtn.disabled = false;
-                    }
-                } catch (err) {
-                    messageDiv.innerHTML = '<div class="message message-error">❌ Error starting update: ' + err.message + '</div>';
-                    updateBtn.disabled = false;
                 }
             }
 
