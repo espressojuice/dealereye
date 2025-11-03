@@ -455,19 +455,19 @@ def dashboard():
             <button class="modal-close" onclick="closeModal()">&times;</button>
             <h2>🔄 System Updates</h2>
             <div id="update-message"></div>
-            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 20px;">
+            <div style="margin-bottom: 20px;">
                 <button class="btn" onclick="checkForUpdates()">Check for Updates</button>
-                <span id="version-info" style="color: #888; font-size: 14px;"></span>
             </div>
-            <div id="update-instructions" style="background: #1a1a1a; padding: 15px; border-radius: 4px; display: none;">
-                <h3 style="margin-top: 0; color: #4CAF50;">📋 Update Instructions</h3>
-                <p style="color: #ccc; margin-bottom: 15px;">To update the system, run this command on your Jetson:</p>
-                <code style="display: block; background: #000; padding: 10px; border-radius: 4px; color: #4CAF50; word-break: break-all; margin-bottom: 10px;">
-                    curl -fsSL https://raw.githubusercontent.com/espressojuice/dealereye/main/install.sh | bash
-                </code>
-                <p style="color: #888; font-size: 14px; margin: 0;">
-                    The update will take 2-3 minutes. The dashboard will automatically refresh when complete.
-                </p>
+            <div id="version-info-section" style="background: #1a1a1a; padding: 15px; border-radius: 4px; display: none;">
+                <div style="display: grid; grid-template-columns: auto 1fr; gap: 10px 20px; margin-bottom: 15px;">
+                    <span style="color: #888;">Current Version:</span>
+                    <span id="current-version" style="color: #4CAF50; font-family: monospace;">-</span>
+                    <span style="color: #888;">Latest Version:</span>
+                    <span id="latest-version" style="color: #4CAF50; font-family: monospace;">-</span>
+                </div>
+                <button class="btn btn-warning" id="update-now-btn" onclick="applyUpdate()" style="display: none;">
+                    Update Now
+                </button>
             </div>
         </div>
 
@@ -859,14 +859,17 @@ def dashboard():
                     const data = await response.json();
                     console.log('Update check data:', data);
 
+                    // Show version info section
+                    document.getElementById('version-info-section').style.display = 'block';
+                    document.getElementById('current-version').textContent = data.local_version;
+                    document.getElementById('latest-version').textContent = data.latest_version;
+
                     if (data.update_available) {
                         messageDiv.innerHTML = '<div class="message message-success">✨ Update available!</div>';
-                        versionInfo.textContent = `Current: ${data.local_version} → Latest: ${data.latest_version}`;
-                        document.getElementById('update-instructions').style.display = 'block';
+                        document.getElementById('update-now-btn').style.display = 'inline-block';
                     } else {
                         messageDiv.innerHTML = '<div class="message" style="background: #4CAF50;">✅ You are running the latest version!</div>';
-                        versionInfo.textContent = `Version: ${data.local_version}`;
-                        document.getElementById('update-instructions').style.display = 'none';
+                        document.getElementById('update-now-btn').style.display = 'none';
                         // Keep the "up to date" message visible
                         setTimeout(() => {
                             messageDiv.innerHTML = '';
@@ -875,6 +878,65 @@ def dashboard():
                 } catch (err) {
                     console.error('Update check error:', err);
                     messageDiv.innerHTML = '<div class="message message-error">❌ Error: ' + err.message + '</div>';
+                }
+            }
+
+            async function applyUpdate() {
+                if (!confirm('This will update the system to the latest version. The dashboard will be unavailable for about 3 minutes. Continue?')) {
+                    return;
+                }
+
+                const messageDiv = document.getElementById('update-message');
+                const updateBtn = document.getElementById('update-now-btn');
+
+                messageDiv.innerHTML = '<div class="message" style="background: #ff9800;">🔄 Update started! Rebuilding and restarting (3 minutes)...</div>';
+                updateBtn.disabled = true;
+
+                try {
+                    const response = await fetch('/update/apply', {method: 'POST'});
+                    const data = await response.json();
+
+                    if (data.status === 'updating') {
+                        // Show countdown and auto-refresh
+                        let seconds = 180;
+                        messageDiv.innerHTML = `<div class="message" style="background: #ff9800;">
+                            🔄 <strong>Update in progress...</strong><br><br>
+                            Dashboard will reconnect automatically in <span id="countdown">${seconds}</span> seconds
+                        </div>`;
+
+                        const countdownInterval = setInterval(() => {
+                            seconds--;
+                            const countdownEl = document.getElementById('countdown');
+                            if (countdownEl) countdownEl.textContent = seconds;
+
+                            if (seconds <= 0) {
+                                clearInterval(countdownInterval);
+                                clearInterval(checkInterval);
+                                location.reload();
+                            }
+                        }, 1000);
+
+                        // Try to reconnect every 10 seconds
+                        const checkInterval = setInterval(async () => {
+                            try {
+                                const pingResponse = await fetch('/', {method: 'HEAD'});
+                                if (pingResponse.ok) {
+                                    clearInterval(checkInterval);
+                                    clearInterval(countdownInterval);
+                                    messageDiv.innerHTML = '<div class="message message-success">✅ Update complete! Reloading...</div>';
+                                    setTimeout(() => location.reload(), 2000);
+                                }
+                            } catch (e) {
+                                // Still updating, keep waiting
+                            }
+                        }, 10000);
+                    } else {
+                        messageDiv.innerHTML = `<div class="message message-error">❌ ${data.error || 'Update failed'}</div>`;
+                        updateBtn.disabled = false;
+                    }
+                } catch (err) {
+                    messageDiv.innerHTML = '<div class="message message-error">❌ Error: ' + err.message + '</div>';
+                    updateBtn.disabled = false;
                 }
             }
 
@@ -1472,58 +1534,80 @@ def apply_update():
     try:
         print("[Update] Update requested by user")
 
-        # Run update in background thread so we can return response before restart
-        def run_update():
-            import time
-            time.sleep(2)  # Give time for HTTP response to be sent
+        # Spawn an independent Alpine container to run the update
+        # This container will survive when dealereye stops
+        update_script = """#!/bin/sh
+set -e
+APP_NAME="dealereye"
+INSTALL_DIR="/opt/${APP_NAME}"
 
-            try:
-                print("[Update] Starting automatic update process...")
-                print("[Update] This will pull latest code, rebuild Docker image, and restart container")
+echo "[Update] Pulling latest code..."
+cd ${INSTALL_DIR}
+git pull origin main
 
-                # Execute the update script which will:
-                # 1. Pull latest code from GitHub to /opt/dealereye
-                # 2. Rebuild docker image with latest code
-                # 3. Stop old container and start new one
-                result = subprocess.run(
-                    ['/usr/bin/bash', '/app/update.sh'],
-                    capture_output=True,
-                    text=True,
-                    timeout=300  # 5 minute timeout
-                )
+echo "[Update] Rebuilding Docker image..."
+docker build -t ${APP_NAME} ${INSTALL_DIR}
 
-                if result.returncode == 0:
-                    print("[Update] Update completed successfully")
-                    print(result.stdout)
-                else:
-                    print(f"[Update] Update failed with code {result.returncode}")
-                    print(f"[Update] stdout: {result.stdout}")
-                    print(f"[Update] stderr: {result.stderr}")
+echo "[Update] Stopping old container..."
+docker stop ${APP_NAME} || true
+docker rm ${APP_NAME} || true
 
-            except subprocess.TimeoutExpired:
-                print("[Update] Update timed out after 5 minutes")
-            except Exception as e:
-                print(f"[Update] Update error: {e}")
-                import traceback
-                traceback.print_exc()
+echo "[Update] Checking for TensorRT engine..."
+TENSORRT_MOUNT=""
+if [ -f "${INSTALL_DIR}/yolov8n.engine" ]; then
+  TENSORRT_MOUNT="-v ${INSTALL_DIR}/yolov8n.engine:/app/yolov8n.engine"
+fi
 
-        # Start update in background
-        import threading
-        update_thread = threading.Thread(target=run_update, daemon=True)
-        update_thread.start()
+echo "[Update] Starting new container..."
+docker run -d \\
+  --restart unless-stopped \\
+  --runtime nvidia \\
+  --gpus all \\
+  -p 8080:8080 \\
+  --name ${APP_NAME} \\
+  -v ~/.aws:/root/.aws \\
+  -v "${INSTALL_DIR}/config:/app/config" \\
+  -v /usr/bin/docker:/usr/bin/docker \\
+  -v /var/run/docker.sock:/var/run/docker.sock \\
+  -v /usr/bin/curl:/usr/bin/curl \\
+  -v /usr/bin/bash:/usr/bin/bash \\
+  ${TENSORRT_MOUNT} \\
+  ${APP_NAME}
+
+echo "[Update] Update complete!"
+"""
+
+        # Run the update in an independent Alpine container with git and docker CLI
+        # Mount docker socket and install directory so it can update dealereye
+        cmd = [
+            'docker', 'run', '--rm',
+            '-v', '/var/run/docker.sock:/var/run/docker.sock',
+            '-v', '/opt/dealereye:/opt/dealereye',
+            '-v', '/usr/bin/docker:/usr/bin/docker',
+            '-v', '/root/.aws:/root/.aws',
+            '--network', 'host',
+            'alpine/git:latest',
+            'sh', '-c',
+            f'apk add --no-cache docker-cli && sleep 3 && {update_script}'
+        ]
+
+        # Start the update container in the background
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        print("[Update] Update container spawned successfully")
 
         return jsonify({
-            "message": "Update started! System will automatically pull latest code, rebuild, and restart in about 2-3 minutes.",
-            "status": "updating",
-            "note": "Dashboard will be temporarily unavailable during rebuild. Refresh page in 3 minutes."
+            "message": "Update started! System will rebuild and restart in about 3 minutes.",
+            "status": "updating"
         })
 
     except Exception as e:
         print(f"[Update] Error starting update: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             "error": str(e),
-            "status": "error",
-            "fallback_command": "curl -fsSL https://raw.githubusercontent.com/espressojuice/dealereye/main/install.sh | bash"
+            "status": "error"
         }), 500
 
 if __name__ == "__main__":
