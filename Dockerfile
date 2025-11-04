@@ -18,8 +18,9 @@ RUN chmod +x /app/update.sh
 
 # Install Python packages (PyTorch already included in base image with CUDA support)
 # l4t-ml base image already includes opencv, numpy, and other ML libraries
-# Just install our application dependencies
-RUN pip3 install --no-cache-dir \
+# Remove old distutils packages that conflict with newer versions
+RUN rm -rf /usr/lib/python3/dist-packages/blinker* && \
+    pip3 install --no-cache-dir \
     boto3 \
     flask \
     requests \
