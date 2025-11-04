@@ -18,19 +18,22 @@ RUN chmod +x /app/update.sh
 
 # Install Python packages (PyTorch already included in base image with CUDA support)
 # l4t-ml base image already includes opencv, numpy, PyTorch, and other ML libraries
-# Create a fake opencv-python package to satisfy ultralytics dependency without installing it
+# Install ultralytics without dependencies, then install only what we need (excluding opencv-python)
 RUN rm -rf /usr/lib/python3/dist-packages/blinker* && \
-    echo -e "[metadata]\nname = opencv-python\nversion = 4.8.0\n\n[options]\ninstall_requires =\n" > /tmp/setup.cfg && \
-    echo "from setuptools import setup; setup()" > /tmp/setup.py && \
-    cd /tmp && pip3 install --no-cache-dir . && \
-    rm /tmp/setup.* && \
     pip3 install --no-cache-dir \
     boto3 \
     flask \
     requests \
     pillow \
     psutil \
-    'ultralytics<8.3'
+    matplotlib \
+    pyyaml \
+    tqdm \
+    py-cpuinfo \
+    pandas \
+    seaborn && \
+    pip3 install --no-cache-dir --no-deps 'ultralytics<8.3' && \
+    pip3 install --no-cache-dir ultralytics-thop
 
 # Create config directory for persistent camera settings
 RUN mkdir -p /app/config
