@@ -40,6 +40,9 @@ RUN rm -rf /usr/lib/python3/dist-packages/blinker* && \
 # Create config directory for persistent camera settings
 RUN mkdir -p /app/config
 
+# Pre-download YOLO model to avoid runtime initialization issues
+RUN python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt')" || true
+
 # Set environment variables to prevent opencv threading issues
 ENV OPENCV_VIDEOIO_PRIORITY_GSTREAMER=0
 ENV OPENCV_VIDEOIO_DEBUG=0
