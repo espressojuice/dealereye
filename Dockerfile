@@ -40,6 +40,12 @@ RUN rm -rf /usr/lib/python3/dist-packages/blinker* && \
 # Create config directory for persistent camera settings
 RUN mkdir -p /app/config
 
+# Set environment variables to prevent opencv threading issues
+ENV OPENCV_VIDEOIO_PRIORITY_GSTREAMER=0
+ENV OPENCV_VIDEOIO_DEBUG=0
+ENV OPENCV_OPENCL_RUNTIME=""
+ENV OMP_NUM_THREADS=1
+
 # Expose Flask port
 EXPOSE 8080
 
