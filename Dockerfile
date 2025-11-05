@@ -19,10 +19,12 @@ RUN chmod +x /app/update.sh
 # Install Python packages (PyTorch already included in base image with CUDA support)
 # l4t-ml base image already includes opencv, numpy, PyTorch, and other ML libraries
 # Install ultralytics without dependencies, then install only what we need (excluding opencv-python)
+# Use waitress instead of Flask dev server to avoid werkzeug memory issues
 RUN rm -rf /usr/lib/python3/dist-packages/blinker* && \
     pip3 install --no-cache-dir \
     boto3 \
     flask \
+    waitress \
     requests \
     pillow \
     psutil \

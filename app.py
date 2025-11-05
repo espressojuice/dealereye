@@ -1718,4 +1718,7 @@ echo "[Update] Update complete!"
         }), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, threaded=False, use_reloader=False)
+    # Use waitress instead of Flask dev server to avoid werkzeug memory corruption issues
+    from waitress import serve
+    print(" * Running on http://0.0.0.0:8080")
+    serve(app, host="0.0.0.0", port=8080, threads=4)
