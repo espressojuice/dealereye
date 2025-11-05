@@ -1,13 +1,23 @@
 # Base image optimized for NVIDIA Jetson with GPU support
 # Use NVIDIA L4T (Linux for Tegra) base image for best Jetson performance
-# R36 = JetPack 6.x (for Orin with driver 540.x and CUDA 12.x)
-# l4t-ml includes PyTorch, TensorFlow, and other ML frameworks
-FROM nvcr.io/nvidia/l4t-ml:r36.2.0-py3
+# R35 = JetPack 5.x - using this as R36 has opencv conflicts with ultralytics
+FROM nvcr.io/nvidia/l4t-pytorch:r35.2.1-pth2.0-py3
 
 # Install additional dependencies
 RUN apt-get update && \
-    apt-get install -y ffmpeg git curl wget && \
+    apt-get install -y ffmpeg git curl wget build-essential && \
     rm -rf /var/lib/apt/lists/*
+
+# Build libffi 3.4.2 from source to provide libffi.so.8 (required by newer opencv-python)
+RUN cd /tmp && \
+    wget https://github.com/libffi/libffi/releases/download/v3.4.2/libffi-3.4.2.tar.gz && \
+    tar -xzf libffi-3.4.2.tar.gz && \
+    cd libffi-3.4.2 && \
+    ./configure --prefix=/usr && \
+    make -j$(nproc) && \
+    make install && \
+    cd / && \
+    rm -rf /tmp/libffi-3.4.2*
 
 # Copy app files
 WORKDIR /app
@@ -17,37 +27,23 @@ COPY . /app
 RUN chmod +x /app/update.sh
 
 # Install Python packages (PyTorch already included in base image with CUDA support)
-# l4t-ml base image already includes opencv, numpy, PyTorch, and other ML libraries
-# Install ultralytics without dependencies, then install only what we need (excluding opencv-python)
-# Use waitress instead of Flask dev server to avoid werkzeug memory issues
-RUN rm -rf /usr/lib/python3/dist-packages/blinker* && \
+# Upgrade numpy first (base image has 1.17.4, ultralytics needs >=1.23.0)
+# Pin ultralytics to version that works on Jetson ARM
+# Install opencv and remove problematic modules, use waitress for production server
+RUN pip3 install --no-cache-dir --upgrade 'numpy>=1.23.0,<2.0.0' && \
     pip3 install --no-cache-dir \
+    'opencv-python-headless==4.5.1.48' \
     boto3 \
     flask \
     waitress \
     requests \
     pillow \
-    psutil \
-    matplotlib \
-    pyyaml \
-    tqdm \
-    py-cpuinfo \
-    pandas \
-    seaborn && \
-    pip3 install --no-cache-dir --no-deps 'ultralytics<8.3' && \
-    pip3 install --no-cache-dir ultralytics-thop
+    'ultralytics<8.3' \
+    psutil && \
+    find /usr/local/lib -name cv2 -type d -exec rm -rf {}/gapi {}/mat_wrapper \; 2>/dev/null || true
 
 # Create config directory for persistent camera settings
 RUN mkdir -p /app/config
-
-# Pre-download YOLO model to avoid runtime initialization issues
-RUN python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt')" || true
-
-# Set environment variables to prevent opencv threading issues
-ENV OPENCV_VIDEOIO_PRIORITY_GSTREAMER=0
-ENV OPENCV_VIDEOIO_DEBUG=0
-ENV OPENCV_OPENCL_RUNTIME=""
-ENV OMP_NUM_THREADS=1
 
 # Expose Flask port
 EXPOSE 8080
