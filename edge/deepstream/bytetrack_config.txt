@@ -1,0 +1,22 @@
+# ByteTrack Configuration for DeepStream NvMultiObjectTracker
+
+[tracker]
+tracker-width=640
+tracker-height=384
+gpu-id=0
+ll-lib-file=/opt/nvidia/deepstream/deepstream/lib/libnvds_nvmultiobjecttracker.so
+ll-config-file=bytetrack_config.txt
+enable-batch-process=1
+enable-past-frame=1
+
+[properties]
+tracking-surface-type=0
+tracking-id-reset-mode=0
+
+# ByteTrack parameters
+track_thresh=0.6
+track_buffer=30
+match_thresh=0.9
+aspect_ratio_thresh=1.6
+min_box_area=10
+mot20=0

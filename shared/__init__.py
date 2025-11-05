@@ -1,0 +1,116 @@
+"""
+Shared schemas and models for DealerEye platform.
+Import from subdirectories for strong typing across services.
+"""
+from shared.schemas.events import (
+    EventType,
+    ObjectClass,
+    BaseEvent,
+    VehicleArrivalEvent,
+    VehicleExitEvent,
+    GreetStartedEvent,
+    BayEntryEvent,
+    BayExitEvent,
+    LobbyEnterEvent,
+    LobbyExitEvent,
+    PerimeterCrossingEvent,
+    SystemHeartbeatEvent,
+    ZoneDwellEvent,
+    LineCrossingEvent,
+    deserialize_event,
+)
+
+from shared.models.core import (
+    CameraRole,
+    CameraStatus,
+    ZoneType,
+    LineType,
+    UserRole,
+    Tenant,
+    BusinessHours,
+    Site,
+    CameraIntrinsics,
+    CameraExtrinsics,
+    CameraHealthSummary,
+    Camera,
+    Point,
+    Zone,
+    Line,
+    User,
+)
+
+from shared.models.metrics import (
+    MetricName,
+    WindowSize,
+    MetricValue,
+    MetricAggregation,
+    YoYComparison,
+)
+
+from shared.models.alerts import (
+    AlertSeverity,
+    AlertStatus,
+    AlertType,
+    NotificationChannel,
+    RuleConditionOperator,
+    RuleCondition,
+    TimeWindow,
+    AlertRule,
+    DeliveryResult,
+    Alert,
+    AlertAuditLog,
+)
+
+__all__ = [
+    # Events
+    "EventType",
+    "ObjectClass",
+    "BaseEvent",
+    "VehicleArrivalEvent",
+    "VehicleExitEvent",
+    "GreetStartedEvent",
+    "BayEntryEvent",
+    "BayExitEvent",
+    "LobbyEnterEvent",
+    "LobbyExitEvent",
+    "PerimeterCrossingEvent",
+    "SystemHeartbeatEvent",
+    "ZoneDwellEvent",
+    "LineCrossingEvent",
+    "deserialize_event",
+    # Core models
+    "CameraRole",
+    "CameraStatus",
+    "ZoneType",
+    "LineType",
+    "UserRole",
+    "Tenant",
+    "BusinessHours",
+    "Site",
+    "CameraIntrinsics",
+    "CameraExtrinsics",
+    "CameraHealthSummary",
+    "Camera",
+    "Point",
+    "Zone",
+    "Line",
+    "User",
+    # Metrics
+    "MetricName",
+    "WindowSize",
+    "MetricValue",
+    "MetricAggregation",
+    "YoYComparison",
+    # Alerts
+    "AlertSeverity",
+    "AlertStatus",
+    "AlertType",
+    "NotificationChannel",
+    "RuleConditionOperator",
+    "RuleCondition",
+    "TimeWindow",
+    "AlertRule",
+    "DeliveryResult",
+    "Alert",
+    "AlertAuditLog",
+]

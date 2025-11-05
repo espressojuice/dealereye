@@ -1,0 +1,28 @@
+# YOLO TensorRT Engine Configuration
+
+[property]
+gpu-id=0
+net-scale-factor=0.0039215697906911373
+model-color-format=0
+onnx-file={ONNX_FILE_PATH}
+model-engine-file={ENGINE_FILE_PATH}
+labelfile-path={LABELS_FILE_PATH}
+batch-size={BATCH_SIZE}
+network-mode=2
+num-detected-classes=80
+interval=0
+gie-unique-id=1
+process-mode=1
+network-type=0
+cluster-mode=2
+maintain-aspect-ratio=1
+parse-bbox-func-name=NvDsInferParseYolo
+custom-lib-path=/opt/nvidia/deepstream/deepstream/lib/libnvds_infercustomparser_yolo.so
+
+[class-attrs-all]
+nms-iou-threshold={NMS_THRESHOLD}
+pre-cluster-threshold={CONFIDENCE_THRESHOLD}
+topk=300
+
+# Filter for relevant classes: person (0), bicycle (1), car (2), motorcycle (3), bus (5), truck (7)
+# Set detected-classes to only track these

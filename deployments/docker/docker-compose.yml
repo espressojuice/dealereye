@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with TimescaleDB for time-series data
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    container_name: dealereye-postgres
+    environment:
+      POSTGRES_DB: dealereye
+      POSTGRES_USER: dealereye
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dealereye123}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dealereye"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching and real-time updates
+  redis:
+    image: redis:7-alpine
+    container_name: dealereye-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # MQTT Broker (Mosquitto) for edge-to-cloud communication
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: dealereye-mqtt
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mqtt_data:/mosquitto/data
+      - mqtt_logs:/mosquitto/log
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Control Plane API
+  api:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.control-plane
+    container_name: dealereye-api
+    environment:
+      DATABASE_URL: postgresql://dealereye:${DB_PASSWORD:-dealereye123}@postgres:5432/dealereye
+      REDIS_URL: redis://redis:6379/0
+      MQTT_BROKER_HOST: mqtt
+      MQTT_BROKER_PORT: 1883
+      JWT_SECRET: ${JWT_SECRET:-change-this-secret}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET: ${S3_BUCKET:-dealereye-clips}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mqtt:
+        condition: service_healthy
+    volumes:
+      - ../../control-plane:/app/control-plane
+      - ../../shared:/app/shared
+    command: uvicorn control-plane.api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Dashboard (React frontend)
+  dashboard:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.dashboard
+    container_name: dealereye-dashboard
+    environment:
+      REACT_APP_API_URL: http://localhost:8000
+      REACT_APP_WS_URL: ws://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    volumes:
+      - ../../dashboard:/app
+      - /app/node_modules
+
+volumes:
+  postgres_data:
+  redis_data:
+  mqtt_data:
+  mqtt_logs:
+
+networks:
+  default:
+    name: dealereye-network

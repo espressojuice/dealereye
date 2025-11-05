@@ -1,0 +1,13 @@
+# Edge device dependencies
+# Note: DeepStream requires special installation on Jetson
+paho-mqtt==1.6.1
+pydantic==2.5.0
+pydantic-settings==2.1.0
+psutil==5.9.6
+numpy==1.24.3
+
+# For GPU monitoring
+pynvml==11.5.0
+
+# DeepStream Python bindings (installed separately on Jetson)
+# pyds (part of DeepStream SDK)

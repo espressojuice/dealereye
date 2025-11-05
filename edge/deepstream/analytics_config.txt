@@ -1,0 +1,36 @@
+# NvDsAnalytics Configuration for Zone and Line Crossing
+# This file is dynamically generated from zone/line definitions
+
+[property]
+enable=1
+config-width=1920
+config-height=1080
+
+# Zones and lines are populated from the database
+# Format for lines:
+# roi-LC-0=1000;500;1000;800
+# direction-LC-0=1
+
+# Format for zones (polygons):
+# roi-RF-0=500;500;500;800;800;800;800;500
+# inverse-roi-RF-0=0
+# class-id-RF-0=-1
+
+# Example line crossing (service lane entry)
+[roi-filtering-stream-0]
+enable=1
+
+# Example: Service lane entry line
+roi-LC-ServiceEntry=960;0;960;1080
+direction-LC-ServiceEntry=1
+class-id-LC-ServiceEntry=2;5;7
+
+# Example: Greet zone
+roi-RF-GreetZone=700;400;700;700;1200;700;1200;400
+inverse-roi-RF-GreetZone=0
+class-id-RF-GreetZone=0
+
+# Example: Lobby door
+roi-LC-LobbyDoor=100;540;300;540
+direction-LC-LobbyDoor=0
+class-id-LC-LobbyDoor=0
