@@ -11,19 +11,17 @@ echo "=========================================="
 # Check if running on Jetson
 if [ ! -f /etc/nv_tegra_release ]; then
     echo "Warning: Not running on NVIDIA Jetson device"
-    read -p "Continue anyway? (y/n) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        exit 1
-    fi
+    echo "This is OK for testing, but production deployments need Jetson hardware"
 fi
 
 # Prompt for configuration
-read -p "Enter Tenant ID: " TENANT_ID
-read -p "Enter Site ID: " SITE_ID
-read -p "Enter Edge ID (unique identifier for this device): " EDGE_ID
-read -p "Enter MQTT Broker Host: " MQTT_HOST
-read -p "Enter MQTT Broker Port [1883]: " MQTT_PORT
+echo ""
+echo "Enter configuration details:"
+read -p "Tenant ID: " TENANT_ID
+read -p "Site ID: " SITE_ID
+read -p "Edge ID (unique identifier): " EDGE_ID
+read -p "MQTT Broker Host: " MQTT_HOST
+read -p "MQTT Broker Port [1883]: " MQTT_PORT
 MQTT_PORT=${MQTT_PORT:-1883}
 
 echo ""
@@ -33,21 +31,21 @@ echo "  Site ID: $SITE_ID"
 echo "  Edge ID: $EDGE_ID"
 echo "  MQTT Broker: $MQTT_HOST:$MQTT_PORT"
 echo ""
-read -p "Confirm configuration? (y/n) " -n 1 -r
+read -p "Confirm? (y/n) " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "Provisioning cancelled"
+    echo "Cancelled"
     exit 1
 fi
 
 # Create directory structure
-echo "Creating directory structure..."
+echo "Creating directories..."
 sudo mkdir -p /opt/dealereye/{edge,models,config,logs}
 sudo chown -R $USER:$USER /opt/dealereye
 
 # Create configuration file
 echo "Creating edge configuration..."
-cat > /opt/dealereye/config/edge.env <<EOF
+cat > /opt/dealereye/config/edge.env <<ENVEOF
 # DealerEye Edge Configuration
 EDGE_ID=$EDGE_ID
 TENANT_ID=$TENANT_ID
@@ -67,64 +65,39 @@ CONFIDENCE_THRESHOLD=0.5
 DEEPSTREAM_CONFIG_PATH=/opt/dealereye/config/deepstream_config.txt
 YOLO_ENGINE_PATH=/opt/dealereye/models/yolo.engine
 BYTETRACK_CONFIG_PATH=/opt/dealereye/config/bytetrack_config.txt
-EOF
+ENVEOF
 
-echo "Configuration saved to /opt/dealereye/config/edge.env"
+echo "✓ Configuration saved to /opt/dealereye/config/edge.env"
 
-# Install system dependencies
-echo "Installing system dependencies..."
-sudo apt-get update
-sudo apt-get install -y python3-pip python3-dev
-
-# Check for DeepStream
-if [ ! -d "/opt/nvidia/deepstream" ]; then
-    echo ""
-    echo "WARNING: DeepStream SDK not found at /opt/nvidia/deepstream"
-    echo "Please install DeepStream 6.3+ before running the edge application"
-    echo "Installation guide: https://docs.nvidia.com/metropolis/deepstream/dev-guide/"
-    echo ""
+# Clone or update code
+if [ -d /opt/dealereye/edge ]; then
+    echo "Updating existing code..."
+    cd /opt/dealereye && git pull origin main
+else
+    echo "Cloning DealerEye code..."
+    cd /opt/dealereye
+    git clone https://github.com/espressojuice/dealereye.git code
+    cp -r code/edge code/shared /opt/dealereye/
 fi
 
-# Install Python dependencies
+# Install dependencies
 echo "Installing Python dependencies..."
-cd /opt/dealereye/edge
-pip3 install -r requirements.txt
-
-# Create systemd service
-echo "Creating systemd service..."
-sudo tee /etc/systemd/system/dealereye-edge.service > /dev/null <<EOF
-[Unit]
-Description=DealerEye Edge Analytics Service
-After=network.target
-
-[Service]
-Type=simple
-User=$USER
-WorkingDirectory=/opt/dealereye/edge
-EnvironmentFile=/opt/dealereye/config/edge.env
-ExecStart=/usr/bin/python3 /opt/dealereye/edge/main.py
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload
+sudo apt-get update
+sudo apt-get install -y python3-pip
+pip3 install -r /opt/dealereye/edge/requirements.txt
 
 echo ""
 echo "=========================================="
-echo "Provisioning Complete!"
+echo "✓ Edge Device Provisioned!"
 echo "=========================================="
+echo ""
+echo "Configuration: /opt/dealereye/config/edge.env"
 echo ""
 echo "Next steps:"
-echo "1. Copy your YOLO model to /opt/dealereye/models/"
-echo "2. Convert YOLO to TensorRT engine (see documentation)"
-echo "3. Configure cameras via control plane API"
-echo "4. Start the edge service:"
-echo "   sudo systemctl start dealereye-edge"
-echo "   sudo systemctl enable dealereye-edge"
+echo "1. Install DeepStream SDK (if not already installed)"
+echo "2. Copy YOLO model to /opt/dealereye/models/"
+echo "3. Test MQTT connection:"
+echo "   mosquitto_sub -h $MQTT_HOST -p $MQTT_PORT -t 'dealereye/#'"
 echo ""
-echo "View logs:"
-echo "   sudo journalctl -u dealereye-edge -f"
+echo "For production, create systemd service to auto-start edge app"
 echo ""
