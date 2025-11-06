@@ -112,7 +112,7 @@ async def create_camera(camera_data: dict, db: Session = Depends(get_db)):
         name=camera_data["name"],
         rtsp_url=camera_data["rtsp_url"],
         role=camera_data.get("camera_role", "GENERAL"),
-        status="OFFLINE",
+        status="INACTIVE",
     )
     db.add(camera)
     db.commit()
