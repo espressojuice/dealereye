@@ -79,23 +79,6 @@ services:
       - ../../shared:/app/shared
     command: uvicorn control_plane.api.main:app --host 0.0.0.0 --port 8000 --reload
 
-  # Dashboard (React frontend)
-  dashboard:
-    build:
-      context: ../..
-      dockerfile: deployments/docker/Dockerfile.dashboard
-    container_name: dealereye-dashboard
-    environment:
-      REACT_APP_API_URL: http://localhost:8000
-      REACT_APP_WS_URL: ws://localhost:8000
-    ports:
-      - "3000:3000"
-    depends_on:
-      - api
-    volumes:
-      - ../../dashboard:/app
-      - /app/node_modules
-
 volumes:
   postgres_data:
   redis_data:

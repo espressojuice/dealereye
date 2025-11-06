@@ -1,0 +1,19 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY dashboard/package.json dashboard/package.json
+
+# Install dependencies
+RUN cd dashboard && npm install
+
+# Copy application code
+COPY dashboard/ /app/dashboard/
+
+# Expose port
+EXPOSE 3000
+
+# Start dev server
+WORKDIR /app/dashboard
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
