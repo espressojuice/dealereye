@@ -9,7 +9,7 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from control-plane.storage.database import (
+from control_plane.storage.database import (
     create_database_engine,
     init_database,
     create_hypertables,
