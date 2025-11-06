@@ -19,7 +19,13 @@ build/
 *.trt
 *.plan
 weights/
-models/
+# AI model files (not Python packages)
+*.weights
+*.onnx
+*.pt
+*.pth
+*.engine
+*.trt
 
 # Data & Outputs
 snapshots/
