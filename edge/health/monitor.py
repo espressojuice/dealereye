@@ -101,11 +101,13 @@ class HealthMonitor:
                 memory_mb = self._get_memory_usage()
 
                 # Create heartbeat event
+                # Use null UUID for system-level heartbeat (not associated with specific camera)
                 from uuid import UUID
+                NULL_UUID = UUID('00000000-0000-0000-0000-000000000000')
                 heartbeat = SystemHeartbeatEvent(
                     tenant_id=UUID(self.config.TENANT_ID),
                     site_id=UUID(self.config.SITE_ID),
-                    camera_id=UUID(self.config.EDGE_ID),  # Using edge_id as camera_id for now
+                    camera_id=NULL_UUID,  # System-level heartbeat
                     fps=avg_fps,
                     dropped_frames_pct=avg_dropped,
                     edge_uptime_seconds=uptime_seconds,
