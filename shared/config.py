@@ -3,7 +3,7 @@ Shared configuration utilities for DealerEye services.
 """
 from typing import Optional
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, ConfigDict
 
 
 class EdgeConfig(BaseSettings):
@@ -21,32 +21,7 @@ class EdgeConfig(BaseSettings):
     MQTT_QOS: int = 1
     MQTT_KEEPALIVE: int = 60
 
-    # DeepStream
-    DEEPSTREAM_CONFIG_PATH: str = "/app/deepstream/config.txt"
-    YOLO_ENGINE_PATH: str = "/app/models/yolo.engine"
-    BYTETRACK_CONFIG_PATH: str = "/app/bytetrack/config.yaml"
-
-    # Video processing
-    BATCH_SIZE: int = 4
-    TARGET_FPS: int = 15
-    CONFIDENCE_THRESHOLD: float = 0.5
-    NMS_THRESHOLD: float = 0.45
-
-    # Buffering
-    CLIP_PRE_ROLL_SECONDS: int = 5
-    CLIP_POST_ROLL_SECONDS: int = 10
-    MAX_RING_BUFFER_SECONDS: int = 60
-
-    # Health
-    HEARTBEAT_INTERVAL_SECONDS: int = 30
-
-    # Offline mode
-    MAX_OFFLINE_QUEUE_SIZE: int = 10000
-    OFFLINE_RETENTION_HOURS: int = 24
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = ConfigDict(env_file=".env", extra="ignore")
 
 
 class ControlPlaneConfig(BaseSettings):
@@ -62,9 +37,9 @@ class ControlPlaneConfig(BaseSettings):
     MQTT_PASSWORD: Optional[str] = None
 
     # Object storage
-    S3_ENDPOINT: Optional[str] = None  # None = AWS S3
-    S3_ACCESS_KEY: str
-    S3_SECRET_KEY: str
+    S3_ENDPOINT: Optional[str] = None
+    S3_ACCESS_KEY: str = ""
+    S3_SECRET_KEY: str = ""
     S3_BUCKET: str = "dealereye-clips"
     S3_REGION: str = "us-east-1"
 
@@ -72,7 +47,7 @@ class ControlPlaneConfig(BaseSettings):
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000
     API_WORKERS: int = 4
-    JWT_SECRET: str
+    JWT_SECRET: str = "change-this-secret"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_HOURS: int = 24
 
@@ -89,11 +64,9 @@ class ControlPlaneConfig(BaseSettings):
 
     # Metrics computation
     METRICS_COMPUTE_INTERVAL_SECONDS: int = 60
-    TTG_MAX_MATCH_WINDOW_SECONDS: int = 300  # 5 minutes
+    TTG_MAX_MATCH_WINDOW_SECONDS: int = 300
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = ConfigDict(env_file=".env", extra="ignore")
 
 
 class DashboardConfig(BaseSettings):
@@ -101,6 +74,4 @@ class DashboardConfig(BaseSettings):
     API_BASE_URL: str = "http://localhost:8000"
     WS_BASE_URL: str = "ws://localhost:8000"
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = ConfigDict(env_file=".env", extra="ignore")
