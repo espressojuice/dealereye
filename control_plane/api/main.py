@@ -96,9 +96,8 @@ async def list_site_cameras(site_id: UUID, db: Session = Depends(get_db)):
             "site_id": str(cam.site_id),
             "name": cam.name,
             "rtsp_url": cam.rtsp_url,
-            "camera_role": cam.camera_role,
+            "role": cam.role,
             "status": cam.status,
-            "enabled": cam.enabled,
             "created_at": cam.created_at.isoformat()
         }
         for cam in cameras
@@ -112,9 +111,8 @@ async def create_camera(camera_data: dict, db: Session = Depends(get_db)):
         site_id=UUID(camera_data["site_id"]),
         name=camera_data["name"],
         rtsp_url=camera_data["rtsp_url"],
-        camera_role=camera_data.get("camera_role", "GENERAL"),
+        role=camera_data.get("camera_role", "GENERAL"),
         status="OFFLINE",
-        enabled=camera_data.get("enabled", True),
     )
     db.add(camera)
     db.commit()
@@ -125,9 +123,8 @@ async def create_camera(camera_data: dict, db: Session = Depends(get_db)):
         "site_id": str(camera.site_id),
         "name": camera.name,
         "rtsp_url": camera.rtsp_url,
-        "camera_role": camera.camera_role,
+        "role": camera.role,
         "status": camera.status,
-        "enabled": camera.enabled,
         "created_at": camera.created_at.isoformat()
     }
 
