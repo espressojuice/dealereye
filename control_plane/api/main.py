@@ -4,19 +4,16 @@ REST + WebSocket API for DealerEye platform.
 """
 from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 from uuid import UUID
 import logging
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
 
 from shared.config import ControlPlaneConfig
-from shared.models.core import (
-    Tenant, Site, Camera, Zone, Line, User,
-    CameraStatus, CameraRole, ZoneType, LineType
-)
-from shared.models.metrics import MetricName, WindowSize, MetricAggregation
-from shared.models.alerts import Alert, AlertRule, AlertStatus
+from shared.models.core import Camera, CameraStatus, CameraRole
+from control_plane.storage.database import CameraModel, SiteModel, TenantModel
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,7 +28,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,55 +37,98 @@ app.add_middleware(
 # Configuration
 config = ControlPlaneConfig()
 
-# Security
-security = HTTPBearer()
+# Database
+engine = create_engine(config.DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 # ===== Dependencies =====
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Verify JWT and return current user."""
-    # TODO: Implement full JWT validation
-    return {"user_id": "example", "tenant_id": "example"}
+def get_db():
+    """Get database session."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 # ===== Tenant and Site Management =====
 
-@app.post("/api/v1/tenants", response_model=Tenant)
-async def create_tenant(tenant: Tenant, user=Depends(get_current_user)):
-    """Create a new tenant."""
-    return tenant
-
-
-@app.get("/api/v1/tenants/{tenant_id}", response_model=Tenant)
-async def get_tenant(tenant_id: UUID, user=Depends(get_current_user)):
+@app.get("/api/v1/tenants/{tenant_id}")
+async def get_tenant(tenant_id: UUID, db: Session = Depends(get_db)):
     """Get tenant by ID."""
-    pass
-
-
-@app.get("/api/v1/sites/{site_id}/cameras", response_model=List[Camera])
-async def list_site_cameras(site_id: UUID, user=Depends(get_current_user)):
-    """List all cameras for a site."""
-    return []
-
-
-# ===== Metrics API =====
-
-@app.get("/api/v1/metrics/{metric_name}")
-async def get_metric(
-    metric_name: MetricName,
-    site_id: UUID,
-    start_time: datetime,
-    end_time: datetime,
-    window_size: Optional[WindowSize] = WindowSize.ONE_HOUR,
-    user=Depends(get_current_user),
-):
-    """Get metric values over time range."""
+    tenant = db.query(TenantModel).filter(TenantModel.tenant_id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
     return {
-        "metric_name": metric_name,
-        "site_id": site_id,
-        "window_size": window_size,
-        "data_points": [],
+        "tenant_id": str(tenant.tenant_id),
+        "name": tenant.name,
+        "created_at": tenant.created_at.isoformat(),
+        "settings": tenant.settings
+    }
+
+
+@app.get("/api/v1/sites/{site_id}")
+async def get_site(site_id: UUID, db: Session = Depends(get_db)):
+    """Get site by ID."""
+    site = db.query(SiteModel).filter(SiteModel.site_id == site_id).first()
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+    return {
+        "site_id": str(site.site_id),
+        "tenant_id": str(site.tenant_id),
+        "name": site.name,
+        "timezone": site.timezone,
+        "address": site.address,
+        "business_hours": site.business_hours,
+        "created_at": site.created_at.isoformat()
+    }
+
+
+@app.get("/api/v1/sites/{site_id}/cameras")
+async def list_site_cameras(site_id: UUID, db: Session = Depends(get_db)):
+    """List all cameras for a site."""
+    cameras = db.query(CameraModel).filter(CameraModel.site_id == site_id).all()
+    return [
+        {
+            "camera_id": str(cam.camera_id),
+            "site_id": str(cam.site_id),
+            "name": cam.name,
+            "rtsp_url": cam.rtsp_url,
+            "camera_role": cam.camera_role,
+            "status": cam.status,
+            "enabled": cam.enabled,
+            "created_at": cam.created_at.isoformat()
+        }
+        for cam in cameras
+    ]
+
+
+@app.post("/api/v1/cameras")
+async def create_camera(camera_data: dict, db: Session = Depends(get_db)):
+    """Create a new camera."""
+    camera = CameraModel(
+        site_id=UUID(camera_data["site_id"]),
+        name=camera_data["name"],
+        rtsp_url=camera_data["rtsp_url"],
+        camera_role=camera_data.get("camera_role", "GENERAL"),
+        status="OFFLINE",
+        enabled=camera_data.get("enabled", True),
+    )
+    db.add(camera)
+    db.commit()
+    db.refresh(camera)
+
+    return {
+        "camera_id": str(camera.camera_id),
+        "site_id": str(camera.site_id),
+        "name": camera.name,
+        "rtsp_url": camera.rtsp_url,
+        "camera_role": camera.camera_role,
+        "status": camera.status,
+        "enabled": camera.enabled,
+        "created_at": camera.created_at.isoformat()
     }
 
 
