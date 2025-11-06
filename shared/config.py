@@ -21,6 +21,18 @@ class EdgeConfig(BaseSettings):
     MQTT_QOS: int = 1
     MQTT_KEEPALIVE: int = 60
 
+    # Offline queue configuration
+    MAX_OFFLINE_QUEUE_SIZE: int = 10000
+    OFFLINE_QUEUE_MAX_AGE_HOURS: int = 24
+
+    # Health monitoring
+    HEALTH_CHECK_INTERVAL_SECONDS: int = 30
+    HEARTBEAT_INTERVAL_SECONDS: int = 60
+
+    # Video processing
+    PROCESS_INTERVAL_MS: int = 33
+    MAX_FPS: int = 30
+
     model_config = ConfigDict(env_file=".env", extra="ignore")
 
 
