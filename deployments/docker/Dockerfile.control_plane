@@ -9,15 +9,15 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
-COPY control-plane/requirements.txt /app/control-plane/requirements.txt
+COPY control_plane/requirements.txt /app/control_plane/requirements.txt
 COPY shared/requirements.txt /app/shared/requirements.txt
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r control-plane/requirements.txt
+RUN pip install --no-cache-dir -r control_plane/requirements.txt
 RUN pip install --no-cache-dir -r shared/requirements.txt
 
 # Copy application code
-COPY control-plane/ /app/control-plane/
+COPY control_plane/ /app/control_plane/
 COPY shared/ /app/shared/
 
 # Set Python path
@@ -27,4 +27,4 @@ ENV PYTHONPATH=/app
 EXPOSE 8000
 
 # Run API server
-CMD ["uvicorn", "control-plane.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "control_plane.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
