@@ -1,6 +1,6 @@
 #!/bin/bash
 # DealerEye Jetson Edge Complete Installation Script
-# One-line install: curl -fsSL https://raw.githubusercontent.com/espressojuice/dealereye/main/deployments/scripts/install_jetson.sh | bash
+# One-line install: curl -fsSL https://raw.githubusercontent.com/espressojuice/dealereye/main/deployments/scripts/install_jetson.sh | bash -s -- <TENANT_ID> <SITE_ID> <MQTT_HOST>
 
 set -e
 
@@ -27,6 +27,20 @@ else
     SUDO="sudo"
 fi
 
+# Parse arguments or use defaults
+TENANT_ID=${1:-"1d3021aa-5c8d-4afc-bb89-c3cea7a1f19d"}
+SITE_ID=${2:-"95f2d9e7-3d72-4eda-9705-4faf83c5edfc"}
+MQTT_HOST=${3:-"localhost"}
+MQTT_PORT=${4:-"1883"}
+EDGE_ID="edge-$(hostname)"
+
+echo "Configuration:"
+echo "  Tenant ID: $TENANT_ID"
+echo "  Site ID: $SITE_ID"
+echo "  Edge ID: $EDGE_ID"
+echo "  MQTT: $MQTT_HOST:$MQTT_PORT"
+echo ""
+
 # Update system
 echo "Updating system..."
 $SUDO apt-get update -qq
@@ -36,48 +50,24 @@ echo "Installing prerequisites..."
 $SUDO apt-get install -y python3-pip git curl wget mosquitto-clients
 
 # Check for DeepStream
-if [ -d "/opt/nvidia/deepstream/deepstream" ]; then
-    DEEPSTREAM_VERSION=$(cat /opt/nvidia/deepstream/deepstream/version | head -1 || echo "unknown")
-    echo "✓ DeepStream $DEEPSTREAM_VERSION already installed"
+if dpkg -l | grep -q deepstream-7.1; then
+    echo "✓ DeepStream 7.1 already installed"
 else
-    echo ""
-    echo "DeepStream SDK not found."
-    echo "Installing DeepStream 6.4..."
-
-    # Download and install DeepStream
-    cd /tmp
-    wget --quiet https://developer.download.nvidia.com/embedded/L4T/r36_Release_v4.0/DeepStream_6.4_Jetson_L4T_r36.4.tar.gz || {
-        echo "Error: Could not download DeepStream. Please install manually:"
-        echo "https://developer.nvidia.com/deepstream-sdk"
-        exit 1
-    }
-
-    $SUDO tar -xf DeepStream_6.4_Jetson_L4T_r36.4.tar.gz -C /
-    cd /opt/nvidia/deepstream/deepstream-6.4
-    $SUDO ./install.sh
-
-    echo "✓ DeepStream installed"
+    echo "Installing DeepStream 7.1..."
+    $SUDO apt-get install -y deepstream-7.1
+    echo "✓ DeepStream 7.1 installed"
 fi
 
-# Prompt for configuration
-echo ""
-echo "=========================================="
-echo "Configuration"
-echo "=========================================="
-read -p "Tenant ID: " TENANT_ID
-read -p "Site ID: " SITE_ID
-read -p "Edge ID [edge-$(hostname)]: " EDGE_ID
-EDGE_ID=${EDGE_ID:-edge-$(hostname)}
-read -p "MQTT Broker Host: " MQTT_HOST
-read -p "MQTT Broker Port [1883]: " MQTT_PORT
-MQTT_PORT=${MQTT_PORT:-1883}
+# Install TensorRT Python bindings
+echo "Installing TensorRT Python bindings..."
+$SUDO apt-get install -y python3-libnvinfer python3-libnvinfer-dev libnvinfer-bin
 
 echo ""
 echo "Installing to: /opt/dealereye"
 
 # Create directory structure
 echo "Creating directories..."
-$SUDO mkdir -p /opt/dealereye/{edge,models,config,logs}
+$SUDO mkdir -p /opt/dealereye/{edge,shared,models,config,logs}
 $SUDO chown -R $USER:$USER /opt/dealereye
 
 # Clone repository
@@ -91,68 +81,58 @@ else
 fi
 
 # Copy code to /opt
-cp -r /opt/dealereye/code/edge/* /opt/dealereye/edge/
-cp -r /opt/dealereye/code/shared /opt/dealereye/
+echo "Copying code..."
+cp -r /opt/dealereye/code/edge/* /opt/dealereye/edge/ 2>/dev/null || true
+cp -r /opt/dealereye/code/shared /opt/dealereye/ 2>/dev/null || true
+
+# Copy config files
+echo "Copying configuration files..."
+cp /opt/dealereye/code/deployments/config/*.txt /opt/dealereye/config/
+cp /opt/dealereye/code/deployments/config/edge_config.env /opt/dealereye/.env
+
+# Update edge config with provided values
+sed -i "s/^EDGE_ID=.*/EDGE_ID=$EDGE_ID/" /opt/dealereye/.env
+sed -i "s/^TENANT_ID=.*/TENANT_ID=$TENANT_ID/" /opt/dealereye/.env
+sed -i "s/^SITE_ID=.*/SITE_ID=$SITE_ID/" /opt/dealereye/.env
+sed -i "s/^MQTT_BROKER_HOST=.*/MQTT_BROKER_HOST=$MQTT_HOST/" /opt/dealereye/.env
+sed -i "s/^MQTT_BROKER_PORT=.*/MQTT_BROKER_PORT=$MQTT_PORT/" /opt/dealereye/.env
 
 # Install Python dependencies
 echo "Installing Python dependencies..."
-pip3 install -r /opt/dealereye/edge/requirements.txt -q
-
-# Create configuration
-echo "Creating configuration..."
-cat > /opt/dealereye/config/edge.env << EOF
-EDGE_ID=$EDGE_ID
-TENANT_ID=$TENANT_ID
-SITE_ID=$SITE_ID
-MQTT_BROKER_HOST=$MQTT_HOST
-MQTT_BROKER_PORT=$MQTT_PORT
-MQTT_QOS=1
-BATCH_SIZE=4
-TARGET_FPS=15
-CONFIDENCE_THRESHOLD=0.5
-DEEPSTREAM_CONFIG_PATH=/opt/dealereye/config/deepstream_config.txt
-YOLO_ENGINE_PATH=/opt/dealereye/models/yolov8n.engine
-BYTETRACK_CONFIG_PATH=/opt/dealereye/config/bytetrack_config.txt
-EOF
+cd /opt/dealereye
+pip3 install --user ultralytics paho-mqtt pydantic pydantic-settings pynvml numpy opencv-python
 
 # Download YOLO model
 echo ""
 echo "Setting up YOLO model..."
-if [ ! -f /opt/dealereye/models/yolov8n.onnx ]; then
-    echo "Downloading YOLOv8n..."
-    pip3 install -q ultralytics
-    cd /opt/dealereye/models
-    python3 << PYEOF
+cd /opt/dealereye/models
+
+if [ ! -f yolov8n.onnx ]; then
+    echo "Downloading and exporting YOLOv8n to ONNX..."
+    cat > download_yolo.py << 'PYEOF'
 from ultralytics import YOLO
+print("Downloading YOLOv8n model...")
 model = YOLO('yolov8n.pt')
-model.export(format='onnx', simplify=True)
-print("✓ YOLO model exported to ONNX")
+print("Exporting to ONNX (without simplification for Jetson compatibility)...")
+model.export(format='onnx', simplify=False)
+print("✓ YOLO model ready")
 PYEOF
-    mv yolov8n.onnx /opt/dealereye/models/
+
+    python3 download_yolo.py
+    rm download_yolo.py
+    echo "✓ YOLO ONNX model created"
 else
     echo "✓ YOLO ONNX model exists"
 fi
 
-# Convert to TensorRT
-echo "Converting YOLO to TensorRT (this may take a few minutes)..."
-if [ ! -f /opt/dealereye/models/yolov8n.engine ]; then
-    cd /opt/dealereye/models
-    /usr/src/tensorrt/bin/trtexec \
-        --onnx=yolov8n.onnx \
-        --saveEngine=yolov8n.engine \
-        --fp16 \
-        --verbose 2>&1 | grep -E "Completed|Time|fps|Engine"
-    echo "✓ TensorRT engine created"
-else
-    echo "✓ TensorRT engine exists"
-fi
-
-# Copy DeepStream configs
-cp /opt/dealereye/code/edge/deepstream/*.txt /opt/dealereye/config/
+echo ""
+echo "NOTE: TensorRT engine will be generated automatically by DeepStream on first run."
+echo "This may take 2-5 minutes the first time a camera is started."
 
 # Create systemd service
+echo ""
 echo "Creating systemd service..."
-$SUDO tee /etc/systemd/system/dealereye-edge.service > /dev/null << EOF
+$SUDO tee /etc/systemd/system/dealereye-edge.service > /dev/null << 'SERVICEEOF'
 [Unit]
 Description=DealerEye Edge Analytics Service
 After=network.target
@@ -160,8 +140,8 @@ After=network.target
 [Service]
 Type=simple
 User=$USER
-WorkingDirectory=/opt/dealereye/edge
-EnvironmentFile=/opt/dealereye/config/edge.env
+WorkingDirectory=/opt/dealereye
+EnvironmentFile=/opt/dealereye/.env
 Environment=PYTHONPATH=/opt/dealereye
 ExecStart=/usr/bin/python3 /opt/dealereye/edge/main.py
 Restart=always
@@ -171,7 +151,10 @@ StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
-EOF
+SERVICEEOF
+
+# Fix $USER in service file
+$SUDO sed -i "s/\$USER/$USER/" /etc/systemd/system/dealereye-edge.service
 
 $SUDO systemctl daemon-reload
 
@@ -190,7 +173,8 @@ echo "=========================================="
 echo "✅ DealerEye Edge Installation Complete!"
 echo "=========================================="
 echo ""
-echo "Configuration: /opt/dealereye/config/edge.env"
+echo "Configuration: /opt/dealereye/.env"
+echo "DeepStream Config: /opt/dealereye/config/yolov8_config.txt"
 echo "Logs: /opt/dealereye/logs/"
 echo ""
 echo "Quick start:"
