@@ -6,7 +6,7 @@ import logging
 import signal
 import sys
 import time
-from typing import Dict
+from typing import Dict, Optional
 from pathlib import Path
 from uuid import UUID
 
@@ -14,6 +14,7 @@ from shared.config import EdgeConfig
 from edge.analytics.zone_line_engine import ZoneLineEngine
 from edge.uplink.mqtt_client import MQTTUplink
 from edge.health.monitor import HealthMonitor
+from edge.video.opencv_processor import OpenCVVideoProcessor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,6 +39,9 @@ class EdgeApplication:
 
         # Analytics engines per camera
         self.zone_line_engines: Dict[str, ZoneLineEngine] = {}
+
+        # Video processor
+        self.video_processor: Optional[OpenCVVideoProcessor] = None
 
         # Graceful shutdown
         self.running = False
@@ -68,25 +72,65 @@ class EdgeApplication:
         )
         self.zone_line_engines[str(example_camera_id)] = engine
 
-    def start_deepstream_pipeline(self):
+    def start_video_processor(self):
         """
-        Start DeepStream pipeline.
-        This is a placeholder - actual implementation uses GStreamer bindings.
+        Start video processor with OpenCV and YOLO.
         """
-        logger.info("Starting DeepStream pipeline...")
+        logger.info("Starting video processor...")
 
-        # TODO: Implement DeepStream pipeline using Python bindings
-        # Key components:
-        # 1. Create GStreamer pipeline
-        # 2. Add RTSP sources
-        # 3. Add streammux
-        # 4. Add nvinfer (YOLO TensorRT)
-        # 5. Add nvtracker (ByteTrack)
-        # 6. Add nvdsanalytics (zone/line detection)
-        # 7. Add probe on nvdsanalytics for event extraction
-        # 8. Start pipeline
+        # Use test video file for now
+        # TODO: Load camera RTSP URLs from control plane config
+        test_video = "/opt/dealereye/test_videos/car-detection.mp4"
+        model_path = "/opt/dealereye/models/yolov8n.pt"
 
-        logger.info("DeepStream pipeline started")
+        # Create video processor
+        self.video_processor = OpenCVVideoProcessor(
+            source=test_video,
+            model_path=model_path,
+            conf_threshold=0.25,
+            iou_threshold=0.45,
+            enable_tracking=True,  # Enabled after scipy upgrade
+        )
+
+        # Initialize processor
+        self.video_processor.initialize()
+
+        # Register callback for detections
+        self.video_processor.set_detection_callback(self._on_detection)
+
+        logger.info("Video processor initialized")
+
+    def _on_detection(self, frame_num: int, detections: list):
+        """
+        Callback for processing detections from DeepStream pipeline.
+        Converts raw YOLO detections to business events.
+
+        Args:
+            frame_num: Frame number
+            detections: List of detection dicts with bbox, class_id, confidence, object_id
+        """
+        # Filter for vehicles and people only (class_id 0=person, 2=car, 5=bus, 7=truck)
+        vehicle_classes = {0, 2, 5, 7}
+
+        for det in detections:
+            class_id = det["class_id"]
+
+            if class_id not in vehicle_classes:
+                continue
+
+            # Log detection
+            object_class = "person" if class_id == 0 else "vehicle"
+            logger.debug(
+                f"Frame {frame_num}: Detected {object_class} "
+                f"(ID: {det['object_id']}, conf: {det['confidence']:.2f})"
+            )
+
+            # TODO: Convert to zone entry/exit and line crossing events
+            # For now, just count detections
+            if frame_num % 30 == 0:  # Log every 30 frames (~1 second)
+                logger.info(
+                    f"Frame {frame_num}: Active detections: {len(detections)}"
+                )
 
     def process_deepstream_event(self, ds_event: dict):
         """
@@ -169,15 +213,16 @@ class EdgeApplication:
             # Initialize cameras
             self.initialize_cameras()
 
-            # Start DeepStream pipeline
-            self.start_deepstream_pipeline()
+            # Start video processor
+            self.start_video_processor()
 
             # Start health monitoring
             self.health_monitor.start()
 
-            # Start analytics loop
+            # Start video processing (blocks until complete or interrupted)
             self.running = True
-            self.analytics_loop()
+            if self.video_processor:
+                self.video_processor.run()
 
         except KeyboardInterrupt:
             logger.info("Interrupted by user")
@@ -189,6 +234,10 @@ class EdgeApplication:
     def shutdown(self):
         """Clean shutdown."""
         logger.info("Shutting down edge application...")
+
+        # Stop video processor
+        if self.video_processor:
+            self.video_processor.stop()
 
         # Stop health monitor
         if hasattr(self, "health_monitor"):

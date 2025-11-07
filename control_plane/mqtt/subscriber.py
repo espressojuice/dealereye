@@ -90,6 +90,10 @@ class MQTTSubscriber:
                     event = deserialize_event(payload)
                     logger.debug(f"Received event: {event.event_type} from site {site_id}")
 
+                    # Add tenant and site context to event
+                    event.tenant_id = tenant_id
+                    event.site_id = site_id
+
                     # Pass to event handler
                     self.event_handler(event)
 
