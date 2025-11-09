@@ -2,6 +2,7 @@
 Edge device main application.
 Integrates DeepStream pipeline, analytics engine, and MQTT uplink.
 """
+import cv2
 import logging
 import signal
 import sys
@@ -11,10 +12,12 @@ from pathlib import Path
 from uuid import UUID
 
 from shared.config import EdgeConfig
+from shared.camera_manager import CameraManager
 from edge.analytics.zone_line_engine import ZoneLineEngine
 from edge.uplink.mqtt_client import MQTTUplink
 from edge.health.monitor import HealthMonitor
 from edge.video.opencv_processor import OpenCVVideoProcessor
+from edge.video.stream_server import MJPEGStreamServer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,6 +36,9 @@ class EdgeApplication:
         # Load configuration
         self.config = EdgeConfig()
 
+        # Initialize camera manager
+        self.camera_manager = CameraManager()
+
         # Initialize components
         self.mqtt_client = MQTTUplink(self.config)
         self.health_monitor = HealthMonitor(self.config, self.mqtt_client)
@@ -42,6 +48,12 @@ class EdgeApplication:
 
         # Video processor
         self.video_processor: Optional[OpenCVVideoProcessor] = None
+
+        # MJPEG stream server for live viewing
+        self.stream_server: Optional[MJPEGStreamServer] = None
+
+        # Currently active camera
+        self.active_camera: Optional[Dict] = None
 
         # Graceful shutdown
         self.running = False
@@ -56,21 +68,39 @@ class EdgeApplication:
     def initialize_cameras(self):
         """
         Initialize camera streams and analytics engines.
-        In production, this loads camera configs from local cache or control plane.
+        Loads camera configurations from camera manager.
         """
-        # TODO: Load camera configurations from control plane via MQTT or REST
-        # For now, create placeholder analytics engines
-        logger.info("Initializing camera analytics engines...")
+        logger.info("Loading camera configurations from camera manager...")
 
-        # Example: Create analytics engine for each camera
-        # In production, this is populated from control plane
-        example_camera_id = UUID(self.config.SITE_ID)  # Placeholder
-        engine = ZoneLineEngine(
-            tenant_id=UUID(self.config.TENANT_ID),
-            site_id=UUID(self.config.SITE_ID),
-            camera_id=example_camera_id,
-        )
-        self.zone_line_engines[str(example_camera_id)] = engine
+        # Load cameras from camera manager
+        cameras = self.camera_manager.list_cameras()
+
+        if not cameras:
+            logger.warning("No cameras configured in camera manager")
+            return
+
+        logger.info(f"Found {len(cameras)} camera(s) in configuration")
+
+        # Create analytics engines for each enabled camera
+        for camera in cameras:
+            if not camera.get('enabled', True):
+                logger.info(f"Skipping disabled camera: {camera.get('name', camera['id'])}")
+                continue
+
+            camera_id = UUID(camera['id'])
+            logger.info(f"Initializing analytics engine for camera: {camera.get('name', camera['id'])}")
+
+            engine = ZoneLineEngine(
+                tenant_id=UUID(self.config.TENANT_ID),
+                site_id=UUID(self.config.SITE_ID),
+                camera_id=camera_id,
+            )
+            self.zone_line_engines[str(camera_id)] = engine
+
+            # Set first enabled camera as active
+            if self.active_camera is None:
+                self.active_camera = camera
+                logger.info(f"Set active camera: {camera.get('name', camera['id'])}")
 
     def start_video_processor(self):
         """
@@ -78,18 +108,32 @@ class EdgeApplication:
         """
         logger.info("Starting video processor...")
 
-        # Use test video file for now
-        # TODO: Load camera RTSP URLs from control plane config
-        test_video = "/opt/dealereye/test_videos/car-detection.mp4"
-        model_path = "/opt/dealereye/models/yolov8n.pt"
+        # Check if we have an active camera configured
+        if not self.active_camera:
+            logger.error("No active camera configured. Cannot start video processor.")
+            return
 
-        # Create video processor
+        # Get camera configuration from active camera
+        rtsp_url = self.active_camera['rtsp_url']
+        camera_name = self.active_camera.get('name', self.active_camera['id'])
+        logger.info(f"Starting video processor for camera: {camera_name}")
+        logger.info(f"RTSP URL: {rtsp_url}")
+
+        model_path = "/opt/dealereye/models/yolov8n.engine"
+
+        # Create and start MJPEG stream server
+        logger.info("Starting MJPEG stream server...")
+        self.stream_server = MJPEGStreamServer(host="0.0.0.0", port=8080)
+        self.stream_server.start()
+
+        # Create video processor with stream server
         self.video_processor = OpenCVVideoProcessor(
-            source=test_video,
+            source=rtsp_url,
             model_path=model_path,
             conf_threshold=0.25,
             iou_threshold=0.45,
             enable_tracking=True,  # Enabled after scipy upgrade
+            stream_server=self.stream_server,
         )
 
         # Initialize processor
@@ -98,7 +142,31 @@ class EdgeApplication:
         # Register callback for detections
         self.video_processor.set_detection_callback(self._on_detection)
 
-        logger.info("Video processor initialized")
+        # Extract camera IP from RTSP URL for display purposes
+        # Format: rtsp://user:pass@ip:port/path
+        import re
+        camera_ip = "Unknown"
+        ip_match = re.search(r'@([^:]+):', rtsp_url)
+        if ip_match:
+            camera_ip = ip_match.group(1)
+
+        # Get resolution from video capture
+        width = int(self.video_processor.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(self.video_processor.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        resolution = f"{width}x{height}"
+
+        # Get model name from processor
+        model_name = "GPU Accelerated YOLO Detection"
+
+        # Update stream server stats
+        self.stream_server.update_stats(
+            camera_ip=camera_ip,
+            resolution=resolution,
+            fps="0.0",  # Will be updated during processing
+            model=model_name
+        )
+
+        logger.info(f"Video processor initialized for {camera_name} ({camera_ip}) at {resolution}")
 
     def _on_detection(self, frame_num: int, detections: list):
         """
@@ -238,6 +306,10 @@ class EdgeApplication:
         # Stop video processor
         if self.video_processor:
             self.video_processor.stop()
+
+        # Stop stream server
+        if self.stream_server:
+            self.stream_server.stop()
 
         # Stop health monitor
         if hasattr(self, "health_monitor"):

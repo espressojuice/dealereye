@@ -7,9 +7,24 @@ import time
 from pathlib import Path
 from typing import Optional, Callable, Dict, List
 import cv2
+import numpy as np
 from ultralytics import YOLO
 
 logger = logging.getLogger(__name__)
+
+# COCO class names for visualization
+COCO_CLASSES = [
+    'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat',
+    'traffic light', 'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat',
+    'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'backpack',
+    'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball',
+    'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket',
+    'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple',
+    'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake',
+    'chair', 'couch', 'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop',
+    'mouse', 'remote', 'keyboard', 'cell phone', 'microwave', 'oven', 'toaster', 'sink',
+    'refrigerator', 'book', 'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush'
+]
 
 
 class OpenCVVideoProcessor:
@@ -25,6 +40,7 @@ class OpenCVVideoProcessor:
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.45,
         enable_tracking: bool = True,
+        stream_server=None,
     ):
         """
         Initialize video processor.
@@ -35,12 +51,14 @@ class OpenCVVideoProcessor:
             conf_threshold: Confidence threshold for detections
             iou_threshold: IOU threshold for NMS
             enable_tracking: Enable object tracking
+            stream_server: Optional MJPEGStreamServer for live view
         """
         self.source = source
         self.model_path = model_path
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
         self.enable_tracking = enable_tracking
+        self.stream_server = stream_server
 
         self.model: Optional[YOLO] = None
         self.cap: Optional[cv2.VideoCapture] = None
@@ -144,6 +162,85 @@ class OpenCVVideoProcessor:
 
         return detections
 
+    def draw_detections(self, frame, detections: List[Dict]):
+        """
+        Draw bounding boxes and labels on frame.
+
+        Args:
+            frame: OpenCV frame (BGR format)
+            detections: List of detection dictionaries
+
+        Returns:
+            Annotated frame
+        """
+        annotated_frame = frame.copy()
+
+        for det in detections:
+            bbox = det["bbox"]
+            class_id = det["class_id"]
+            confidence = det["confidence"]
+            object_id = det["object_id"]
+
+            # Get coordinates
+            x1 = int(bbox["left"])
+            y1 = int(bbox["top"])
+            x2 = int(x1 + bbox["width"])
+            y2 = int(y1 + bbox["height"])
+
+            # Get class name
+            class_name = COCO_CLASSES[class_id] if class_id < len(COCO_CLASSES) else f"Class{class_id}"
+
+            # Color based on class (consistent per class)
+            np.random.seed(class_id)
+            color = tuple(np.random.randint(50, 255, 3).tolist())
+
+            # Draw bounding box
+            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+
+            # Prepare label with ID if tracking enabled
+            if self.enable_tracking and object_id is not None:
+                label = f"ID:{object_id} {class_name} {confidence:.2f}"
+            else:
+                label = f"{class_name} {confidence:.2f}"
+
+            # Draw label background
+            (label_width, label_height), baseline = cv2.getTextSize(
+                label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
+            )
+            cv2.rectangle(
+                annotated_frame,
+                (x1, y1 - label_height - baseline - 5),
+                (x1 + label_width, y1),
+                color,
+                -1
+            )
+
+            # Draw label text
+            cv2.putText(
+                annotated_frame,
+                label,
+                (x1, y1 - baseline - 2),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 255, 255),
+                1
+            )
+
+        # Add FPS counter
+        if self.frame_count > 0:
+            fps_text = f"FPS: {self.fps:.1f} | Frame: {self.frame_count}"
+            cv2.putText(
+                annotated_frame,
+                fps_text,
+                (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 255, 0),
+                2
+            )
+
+        return annotated_frame
+
     def run(self):
         """Run video processing loop."""
         if not self.model or not self.cap:
@@ -168,6 +265,13 @@ class OpenCVVideoProcessor:
                 # Process frame
                 detections = self.process_frame(frame)
 
+                # Draw detections on frame
+                annotated_frame = self.draw_detections(frame, detections)
+
+                # Send to stream server if available
+                if self.stream_server:
+                    self.stream_server.update_frame(annotated_frame)
+
                 # Call detection callback if registered
                 if self.detection_callback and detections:
                     self.detection_callback(self.frame_count, detections)
@@ -180,6 +284,10 @@ class OpenCVVideoProcessor:
                         f"Frame {self.frame_count}: {len(detections)} detections, "
                         f"Processing FPS: {current_fps:.2f}"
                     )
+
+                    # Update stream server FPS stats if available
+                    if self.stream_server:
+                        self.stream_server.update_stats(fps=f"{current_fps:.1f}")
 
         except KeyboardInterrupt:
             logger.info("Interrupted by user")
